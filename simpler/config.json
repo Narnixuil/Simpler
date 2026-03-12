@@ -1,0 +1,8 @@
+﻿{
+    "hotkey":  "ctrl+`",
+    "mouse_middle_key":  false,
+    "scripts_dir":  "scripts",
+    "theme":  "dark",
+    "window_width":  600,
+    "log_file":  "simpler.log"
+}
