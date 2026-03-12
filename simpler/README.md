@@ -66,6 +66,11 @@ def run():
         webbrowser.open(URL, new=2)
 ```
 
+## 脚本库（Library）
+- 仓库根目录有 `Simplerscripts/`，用于集中存放/管理可复用脚本。
+- 发布包里与 `Simpler.exe` 同级的 `scripts/` 才是运行时加载目录。
+- 你可以从 `Simplerscripts/` 里挑选脚本复制到发布包的 `scripts/`。
+
 ## 配置
 配置文件：`config.json`
 
