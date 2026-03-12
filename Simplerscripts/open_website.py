@@ -1,8 +1,8 @@
-﻿# -*- coding: utf-8 -*-
-"""打开网站"""
+# -*- coding: utf-8 -*-
+"""Open Website"""
 
-NAME = "打开网站"
-DESCRIPTION = "使用默认浏览器打开一个网页"
+NAME = "Open Website"
+DESCRIPTION = "Open a web page in the default browser"
 
 URL = "https://example.com"
 

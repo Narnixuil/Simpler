@@ -1,8 +1,8 @@
-﻿# -*- coding: utf-8 -*-
-"""打开记事本"""
+# -*- coding: utf-8 -*-
+"""Open Notepad"""
 
-NAME = "打开记事本"
-DESCRIPTION = "启动 Windows 记事本"
+NAME = "Open Notepad"
+DESCRIPTION = "Launch Windows Notepad"
 
 def run():
     import subprocess

@@ -1,14 +1,14 @@
-﻿# Scripts Library (Repo)
+# Scripts Library (Repo)
 
-这是脚本库根目录，用来存放可复用的脚本。你可以按需把脚本复制到发布包里与 `Simpler.exe` 同级的 `scripts/` 文件夹中，
-启动器会自动识别并生成脚本卡片。
+This is the scripts library root. Copy scripts into the release package's `scripts/` folder (next to `Simpler.exe`).
+The launcher will automatically detect them and generate script cards.
 
-## 使用方式
-1. 从这里挑选脚本
-2. 复制到发布包中的 `scripts/`
-3. 启动 Simpler，即可在面板看到脚本
+## How to Use
+1. Pick scripts from here
+2. Copy them into the release `scripts/`
+3. Launch Simpler and see them in the panel
 
-## 规范
-- 每个脚本必须提供 `run()` 函数
-- 建议使用 UTF‑8 编码保存
-- 可选字段：`NAME`、`DESCRIPTION`、`ICON`
+## Rules
+- Each script must provide a `run()` function
+- Recommended: save with UTF-8 encoding
+- Optional metadata: `NAME`, `DESCRIPTION`, `ICON`

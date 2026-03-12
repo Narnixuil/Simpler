@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Simpler - Windows script launcher (single-file main.py)
 
@@ -10,7 +10,7 @@ Features:
 - Scans `scripts` directory for Python scripts exposing `run()`
 """
 
-# === 配置管理 ===
+# === Configuration ===
 import sys
 import os
 import json
@@ -40,20 +40,20 @@ except Exception:
 
 try:
 	import pystray
-	from PIL import Image, ImageDraw
+	from PIL import Image, ImageDraw, ImageTk
 except Exception:
 	pystray = None
 
 import winreg
 
-# === 路径工具 ===
+# === Path Utilities ===
 BASE_DIR = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) \
 	else os.path.dirname(os.path.abspath(__file__))
 
 def join_base(*parts):
 	return os.path.join(BASE_DIR, *parts)
 
-# === 配置管理 ===
+# === Configuration ===
 DEFAULT_CONFIG = {
 	"hotkey": "ctrl+`",
 	"mouse_middle_key": False,
@@ -87,21 +87,11 @@ def load_config():
 	cfg['scripts_dir'] = cfg.get('scripts_dir') or DEFAULT_CONFIG['scripts_dir']
 	return cfg
 
-# === 日志初始化 ===
-LOG_PATH = join_base(DEFAULT_CONFIG['log_file'])
+# === Logging ===
 logger = logging.getLogger('simpler')
 logger.setLevel(logging.DEBUG)
-try:
-	log_file = None
-	# will reconfigure after reading config for custom log filename
-	handler = logging.handlers.RotatingFileHandler(LOG_PATH, maxBytes=1_000_000, backupCount=2, encoding='utf-8')
-	formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s')
-	handler.setFormatter(formatter)
-	logger.addHandler(handler)
-except Exception:
-	logging.basicConfig(level=logging.DEBUG)
 
-# === 单例 / IPC ===
+# === Single Instance / IPC ===
 IPC_HOST = '127.0.0.1'
 IPC_PORT = 57832
 ipc_server_socket = None
@@ -156,7 +146,7 @@ def send_ipc_show():
 	except Exception:
 		return False
 
-# === 脚本发现 ===
+# === Script Discovery ===
 def discover_scripts(scripts_dir):
 	results = []
 	full_dir = join_base(scripts_dir)
@@ -184,7 +174,7 @@ def discover_scripts(scripts_dir):
 		except Exception:
 			logger.exception('Failed to read script %s', path)
 			meta['has_run'] = False
-			meta['disabled_reason'] = '脚本编码无法读取，请保存为 UTF-8'
+			meta['disabled_reason'] = 'Script encoding unreadable. Please save as UTF-8.'
 			results.append(meta)
 			continue
 		# metadata via regex
@@ -193,7 +183,7 @@ def discover_scripts(scripts_dir):
 		m = re.search(r"^DESCRIPTION\s*=\s*(['\"])(.*?)\1", text, re.M)
 		meta['description'] = m.group(2).strip() if m else ''
 		m = re.search(r"^ICON\s*=\s*(['\"])(.*?)\1", text, re.M)
-		meta['icon'] = m.group(2).strip() if m else '🐍'
+		meta['icon'] = m.group(2).strip() if m else '??'
 		# check for run() via ast
 		try:
 			tree = ast.parse(text, filename=path)
@@ -205,65 +195,83 @@ def discover_scripts(scripts_dir):
 		meta['has_run'] = has_run
 		logger.info('Discovered script: %s has_run=%s', path, has_run)
 		if not has_run:
-			meta['disabled_reason'] = '脚本未包含 run()，或脚本无法解析'
+			meta['disabled_reason'] = 'Script missing run() or failed to parse.'
 		results.append(meta)
 	return results
 
-# === 脚本执行 ===
+# === Script Execution ===
 def execute_script_inprocess(script_path):
-    try:
-        ns = runpy.run_path(script_path)
-        fn = ns.get('run')
-        if not callable(fn):
-            raise RuntimeError('No run() found in script')
-        fn()
-        return 0
-    except Exception:
-        logger.exception('Failed to run script in-process: %s', script_path)
-        return -1
+	try:
+		ns = runpy.run_path(script_path)
+		fn = ns.get('run')
+		if not callable(fn):
+			raise RuntimeError('No run() found in script')
+		fn()
+		return 0
+	except Exception:
+		logger.exception('Failed to run script in-process: %s', script_path)
+		return -1
 
 
 def execute_script_async(script_path, on_finish=None):
-    now = time.monotonic()
-    with _last_exec_lock:
-        last = _last_exec.get(script_path, 0)
-        if now - last < 0.5:
-            logger.info('Exec ignored (debounce): %s', script_path)
-            return
-        _last_exec[script_path] = now
+	now = time.monotonic()
+	with _last_exec_lock:
+		last = _last_exec.get(script_path, 0)
+		if now - last < 0.5:
+			logger.info('Exec ignored (debounce): %s', script_path)
+			return
+		_last_exec[script_path] = now
 
-    def run():
-        logger.info('Starting script: %s', script_path)
-        try:
-            cwd = os.path.dirname(script_path) or BASE_DIR
-            if getattr(sys, 'frozen', False):
-                # When frozen, launching a new subprocess with the exe can
-                # fail to initialize the embedded interpreter. Run in-process.
-                code = execute_script_inprocess(script_path)
-            else:
-                # Execute run() inside the script to avoid no-op when the file
-                # only defines run() but does not call it.
-                code_str = (
-                    "import runpy,sys; "
-                    "ns=runpy.run_path(sys.argv[1]); "
-                    "fn=ns.get('run'); "
-                    "import sys as _s; "
-                    "(_s.exit('No run() found') if not callable(fn) else fn())"
-                )
-                proc = subprocess.Popen([sys.executable, '-c', code_str, script_path], cwd=cwd)
-                code = proc.wait()
-            logger.info('Script finished: %s exit=%s', script_path, code)
-            if on_finish:
-                on_finish(script_path, code)
-        except Exception:
-            logger.exception('Failed to execute %s', script_path)
-            if on_finish:
-                on_finish(script_path, -1)
-    t = threading.Thread(target=run, daemon=True)
-    t.start()
+	def run():
+		logger.info('Starting script: %s', script_path)
+		try:
+			cwd = os.path.dirname(script_path) or BASE_DIR
+			if getattr(sys, 'frozen', False):
+				# When frozen, launching a new subprocess with the exe can
+				# fail to initialize the embedded interpreter. Run in-process.
+				code = execute_script_inprocess(script_path)
+			else:
+				# Execute run() inside the script to avoid no-op when the file
+				# only defines run() but does not call it.
+				code_str = (
+					"import runpy,sys; "
+					"ns=runpy.run_path(sys.argv[1]); "
+					"fn=ns.get('run'); "
+					"import sys as _s; "
+					"(_s.exit('No run() found') if not callable(fn) else fn())"
+				)
+				proc = subprocess.Popen([sys.executable, '-c', code_str, script_path], cwd=cwd)
+				code = proc.wait()
+			logger.info('Script finished: %s exit=%s', script_path, code)
+			if on_finish:
+				on_finish(script_path, code)
+		except Exception:
+			logger.exception('Failed to execute %s', script_path)
+			if on_finish:
+				on_finish(script_path, -1)
+	t = threading.Thread(target=run, daemon=True)
+	t.start()
 
-# === GUI 组件 ===
+# === GUI ===
 class SimplerGUI:
+	def _load_icon_image(self, path):
+		if not path:
+			return None
+		try:
+			if path in self._icon_cache:
+				return self._icon_cache[path]
+			if not os.path.exists(path):
+				return None
+			if 'ImageTk' not in globals():
+				return None
+			img = Image.open(path).convert('RGBA')
+			img = img.resize((32, 32), Image.LANCZOS)
+			tk_img = ImageTk.PhotoImage(img)
+			self._icon_cache[path] = tk_img
+			return tk_img
+		except Exception:
+			return None
+
 	def __init__(self, root, config):
 		self.root = root
 		self.config = config
@@ -276,6 +284,9 @@ class SimplerGUI:
 		self.showing = False
 		self.error_label = None
 		self._last_click_time = 0.0
+		self._placeholder_text = 'Search scripts...'
+		self._icon_cache = {}
+		self._default_icon_image = self._load_icon_image(join_base('assets', 'default_icon.png'))
 		self.reload_scripts()
 
 		# poll IPC queue
@@ -331,7 +342,6 @@ class SimplerGUI:
 		# estimate height: number of rows * card height + search
 		cards_per_row = 3
 		card_h = 70
-		padding = 12
 		rows = max(1, (len(self.scripts) + cards_per_row - 1) // cards_per_row)
 		est_h = min(500, 60 + rows * (card_h + 8) + 40)
 		height = est_h
@@ -352,9 +362,23 @@ class SimplerGUI:
 		search_frame.pack(fill='x', padx=12, pady=(12, 6))
 		entry = tk.Entry(search_frame, textvariable=self.filter_var, font=('Segoe UI', 11))
 		entry.pack(fill='x', ipady=6)
-		entry.insert(0, '')
+		entry.insert(0, self._placeholder_text)
+		entry.configure(fg='#888888')
 		entry.focus_set()
-		self.filter_var.trace_add('write', lambda *a: self._refresh_cards())
+		self.filter_var.trace_add('write', lambda *a: self._on_filter_change())
+
+		def on_focus_in(e):
+			if entry.get() == self._placeholder_text:
+				entry.delete(0, 'end')
+				entry.configure(fg=colors['text'])
+
+		def on_focus_out(e):
+			if not entry.get():
+				entry.insert(0, self._placeholder_text)
+				entry.configure(fg='#888888')
+
+		entry.bind('<FocusIn>', on_focus_in)
+		entry.bind('<FocusOut>', on_focus_out)
 
 		# canvas for cards with scrollbar
 		canvas = tk.Canvas(self.window, bg=colors['bg'], highlightthickness=0)
@@ -388,8 +412,18 @@ class SimplerGUI:
 				pass
 		self.window = None
 		self.showing = False
+		self.filter_var.set('')
 
 	def _refresh_cards(self):
+		if not self.window or not tk.Toplevel.winfo_exists(self.window):
+			return
+		if not getattr(self, 'card_container', None):
+			return
+		try:
+			if not self.card_container.winfo_exists():
+				return
+		except Exception:
+			return
 		# clear
 		for w in self.card_widgets:
 			try:
@@ -399,6 +433,8 @@ class SimplerGUI:
 		self.card_widgets = []
 
 		q = (self.filter_var.get() or '').lower().strip()
+		if q == self._placeholder_text.lower():
+			q = ''
 		visible = []
 		for s in self.scripts:
 			if not q or q in s.get('name','').lower() or q in s.get('description','').lower():
@@ -417,7 +453,20 @@ class SimplerGUI:
 			frame.grid(row=row, column=col, padx=(0 if col==0 else pad,0), pady=(0,8))
 			frame.grid_propagate(False)
 			# icon
-			icon_lbl = tk.Label(frame, text=s.get('icon','🐍'), bg=colors['card'], fg=colors['text'], font=('Segoe UI', 20), width=2)
+			icon_value = s.get('icon','')
+			icon_img = None
+			if isinstance(icon_value, str) and icon_value:
+				icon_path = icon_value
+				if not os.path.isabs(icon_path) and (icon_path.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.ico'))):
+					icon_path = join_base(icon_path)
+				icon_img = self._load_icon_image(icon_path)
+			if not icon_img:
+				icon_img = self._default_icon_image
+			if icon_img:
+				icon_lbl = tk.Label(frame, image=icon_img, bg=colors['card'])
+				icon_lbl.image = icon_img
+			else:
+				icon_lbl = tk.Label(frame, text=icon_value or 'PY', bg=colors['card'], fg=colors['text'], font=('Segoe UI', 20), width=2)
 			icon_lbl.pack(side='left', padx=8, pady=8)
 			texts = tk.Frame(frame, bg=colors['card'])
 			texts.pack(side='left', fill='both', expand=True, pady=8)
@@ -434,12 +483,24 @@ class SimplerGUI:
 				name_lbl.configure(bg='#555555')
 				desc_lbl.configure(bg='#777777')
 
-			def on_enter(e, f=frame, disabled=disabled):
+			card_widgets_list = [icon_lbl, texts, name_lbl, desc_lbl]
+
+			def on_enter(e, f=frame, disabled=disabled, widgets=card_widgets_list):
 				if not disabled and f.winfo_exists():
 					f.configure(bg=colors['card_hover'])
-			def on_leave(e, f=frame, disabled=disabled):
+					for w in widgets:
+						try:
+							w.configure(bg=colors['card_hover'])
+						except Exception:
+							pass
+			def on_leave(e, f=frame, disabled=disabled, widgets=card_widgets_list):
 				if not disabled and f.winfo_exists():
 					f.configure(bg=colors['card'])
+					for w in widgets:
+						try:
+							w.configure(bg=colors['card'])
+						except Exception:
+							pass
 			frame.bind('<Enter>', on_enter)
 			frame.bind('<Leave>', on_leave)
 			for child in frame.winfo_children():
@@ -464,7 +525,7 @@ class SimplerGUI:
 				if disabled:
 					# show reason banner
 					try:
-						reason = script.get('disabled_reason') or '脚本不可执行'
+						reason = script.get('disabled_reason') or 'Script not executable'
 						logger.warning('Script disabled: %s reason=%s', script.get('path'), reason)
 						if self.window and tk.Toplevel.winfo_exists(self.window):
 							self.error_label.configure(text=f"Script disabled: {reason}")
@@ -482,6 +543,7 @@ class SimplerGUI:
 			def bind_all(widget):
 				try:
 					widget.bind('<Button-1>', on_click)
+					widget.bind('<ButtonRelease-1>', on_click)
 				except Exception:
 					pass
 				for ch in widget.winfo_children():
@@ -505,7 +567,22 @@ class SimplerGUI:
 			except Exception:
 				pass
 
-# === 全局热键 ===
+	def _on_filter_change(self):
+		if not self.window or not tk.Toplevel.winfo_exists(self.window):
+			return
+		if not getattr(self, 'card_container', None):
+			return
+		try:
+			if not self.card_container.winfo_exists():
+				return
+		except Exception:
+			return
+		val = self.filter_var.get()
+		if val == self._placeholder_text:
+			return
+		self._refresh_cards()
+
+# === Global Hotkey ===
 hotkey_ok = False
 hotkey_warning = False
 
@@ -546,7 +623,7 @@ def try_notify(msg, title='Simpler'):
 	except Exception:
 		pass
 
-# === 系统托盘 ===
+# === System Tray ===
 tray_icon = None
 tray_thread = None
 
@@ -595,15 +672,18 @@ def create_tray(icon_title, gui, config):
 			icon.stop()
 		except Exception:
 			pass
-		os._exit(0)
+		try:
+			gui.root.after(0, gui.root.quit)
+		except Exception:
+			pass
 
 	def make_menu():
 		return pystray.Menu(
-			pystray.MenuItem('显示面板', on_show),
-			pystray.MenuItem('开机自启动', toggle_autostart, checked=lambda item: check_autostart()),
-			pystray.MenuItem('打开脚本目录', on_open_scripts),
+			pystray.MenuItem('Show Panel', on_show),
+			pystray.MenuItem('Run at Startup', toggle_autostart, checked=lambda item: check_autostart()),
+			pystray.MenuItem('Open Scripts Folder', on_open_scripts),
 			pystray.Menu.SEPARATOR,
-			pystray.MenuItem('退出', on_quit)
+			pystray.MenuItem('Quit', on_quit)
 		)
 
 	image = make_icon_image('#0078d4', warn=hotkey_warning)
@@ -618,8 +698,8 @@ def create_tray(icon_title, gui, config):
 	tray_thread = threading.Thread(target=run_icon, daemon=True)
 	tray_thread.start()
 
-# === 开机自启动 ===
-RUN_KEY = r"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+# === Startup ===
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 RUN_NAME = 'Simpler'
 
 def enable_autostart():
@@ -657,9 +737,8 @@ def check_autostart():
 	except Exception:
 		return False
 
-# === 主入口 ===
+# === Entry Point ===
 def main():
-	global logger
 	config = load_config()
 	# reconfigure logging to desired file
 	try:
@@ -724,7 +803,7 @@ if __name__ == '__main__':
 	except Exception:
 		logger.exception('Unhandled exception in main')
 
-# === 依赖列表 ===
+# === Dependencies ===
 # Required pip packages:
 # keyboard, pynput, pystray, Pillow, pywin32
 
