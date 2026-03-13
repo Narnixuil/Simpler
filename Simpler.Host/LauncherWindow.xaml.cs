@@ -1,4 +1,4 @@
-ï»¿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -110,7 +110,7 @@ public partial class LauncherWindow : Window
         _scripts = ScriptDiscovery.Discover(_scriptsDir, _registry);
         RenderCards(_scripts);
         StatusLabel.Content =
-            $"{_scripts.Count} scripts Â· {_scriptsDir}";
+            $"{_scripts.Count} scripts ¡¤ {_scriptsDir}";
     }
 
     private void RenderCards(IEnumerable<ScriptMeta> scripts)
@@ -129,6 +129,7 @@ public partial class LauncherWindow : Window
         {
             Text = script.Icon,
             FontSize = 28,
+            Foreground = Brushes.White,
             HorizontalAlignment = HorizontalAlignment.Center
         };
         var nameText = new TextBlock
@@ -140,23 +141,13 @@ public partial class LauncherWindow : Window
             TextAlignment = TextAlignment.Center,
             Margin = new Thickness(4, 4, 4, 0)
         };
-        var langText = new TextBlock
-        {
-            Text = script.Lang.ToUpper(),
-            FontSize = 8,
-            Foreground = new SolidColorBrush(
-                Color.FromRgb(0x66, 0x66, 0x66)),
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-
         var stack = new StackPanel
         {
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center
         };
         stack.Children.Add(iconText);
-        stack.Children.Add(nameText);
-        stack.Children.Add(langText);
+        stack.Children.Add(nameText);
 
         var border = new Border
         {
@@ -203,7 +194,7 @@ public partial class LauncherWindow : Window
             ScriptContext context;
             try
             {
-                // ContextCapture internally uses StaRunner â€” safe here.
+                // ContextCapture internally uses StaRunner ¡ª safe here.
                 context = await ContextCapture.GrabAsync();
             }
             catch (Exception ex)
@@ -224,7 +215,7 @@ public partial class LauncherWindow : Window
 
             try
             {
-                // ContextApply internally uses StaRunner â€” safe here.
+                // ContextApply internally uses StaRunner ¡ª safe here.
                 await ContextApply.CommitAsync(context);
             }
             catch (Exception ex)
@@ -277,6 +268,9 @@ public partial class LauncherWindow : Window
         if (e.Key == Key.Escape) Close();
     }
 }
+
+
+
 
 
 

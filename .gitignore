@@ -24,7 +24,7 @@ dist/
 
 # Build artifacts
 *.zip
-
+release/
 
 # .NET build
 bin/

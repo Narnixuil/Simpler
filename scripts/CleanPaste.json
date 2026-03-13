@@ -1,34 +1,32 @@
 {
-  "name": "Clean Paste",
-  "description": "Normalize copied text (remove extra spaces/lines)",
-  "icon": "🧹",
-  "steps": [
-    {
-      "op": "csharp",
-      "codeLines": [
-        "using System;",
-        "using System.Linq;",
-        "using System.Text.RegularExpressions;",
-        "using Simpler.Core.Models;",
-        "",
-        "async System.Threading.Tasks.Task Run(ScriptContext context)",
-        "{",
-        "    string text = \"\";",
-        "    try",
-        "    {",
-        "        text = Simpler.Core.Context.StaRunner.Run(() => System.Windows.Forms.Clipboard.ContainsText() ? System.Windows.Forms.Clipboard.GetText() : \"\");",
-        "    }",
-        "    catch { }",
-        "    if (string.IsNullOrWhiteSpace(text)) return;",
-        "",
-        "    var norm = text.Replace(\"\\r\\n\", \"\\n\").Replace(\"\\r\", \"\\n\");",
-        "    var lines = norm.Split('\\n').Select(l => l.Trim()).Where(l => l.Length > 0);",
-        "    var joined = string.Join(\" \", lines);",
-        "    joined = Regex.Replace(joined, \"\\\\s+\", \" \").Trim();",
-        "    if (joined.Length == 0) return;",
-        "    context.SetOutputText(joined);",
-        "}"
-      ]
-    }
-  ]
+    "icon":  "🧹",
+    "description":  "Normalize copied text (remove extra spaces/lines)",
+    "name":  "Clean Paste",
+    "steps":  [
+                  {
+                      "codeLines":  [
+                                        "using System;",
+                                        "using System.Linq;",
+                                        "using Simpler.Core.Models;",
+                                        "",
+                                        "async System.Threading.Tasks.Task Run(ScriptContext context)",
+                                        "{",
+                                        "    string text = \"\";",
+                                        "    try",
+                                        "    {",
+                                        "        text = Simpler.Core.Context.StaRunner.Run(() =\u003e System.Windows.Forms.Clipboard.ContainsText() ? System.Windows.Forms.Clipboard.GetText() : \"\");",
+                                        "    }",
+                                        "    catch { }",
+                                        "    if (string.IsNullOrWhiteSpace(text)) { context.Notify(\"Clipboard is empty.\"); return; }",
+                                        "",
+                                        "    var norm = text.Replace(\"\\r\\n\", \"\\n\").Replace(\"\\r\", \"\\n\");",
+                                        "    var parts = norm.Split(\"\\n\").Select(l =\u003e l.Trim()).Where(l =\u003e l.Length \u003e 0);",
+                                        "    var joined = string.Concat(parts);",
+                                        "    if (joined.Length == 0) return;",
+                                        "    context.SetOutputText(joined);",
+                                        "}"
+                                    ],
+                      "op":  "csharp"
+                  }
+              ]
 }

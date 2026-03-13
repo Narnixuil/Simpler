@@ -31,7 +31,7 @@ jobs:
           if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
           New-Item -ItemType Directory -Path $stage | Out-Null
           $publish = "Simpler.Host/bin/Release/net8.0-windows/win-x64/publish";
-          Copy-Item -Force "$publish/Simpler.Host.exe" "$stage/Simpler.exe"
+          Copy-Item -Force "$publish/Simpler.Host.exe" "$stage/Simpler.exe"`n          Copy-Item -Force "$publish/Simpler.Core.dll" "$stage/Simpler.Core.dll"
           Copy-Item -Force "README.md" "$stage/README.md"
           Copy-Item -Recurse -Force "scripts" "$stage/scripts"
           if (Test-Path "scripts/README.md") { Copy-Item -Force "scripts/README.md" "$stage/scripts/README.md" }
@@ -44,3 +44,4 @@ jobs:
             Simpler-windows.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
