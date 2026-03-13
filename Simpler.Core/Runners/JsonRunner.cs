@@ -1,10 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Simpler.Core.Context;
@@ -77,6 +81,17 @@ public class JsonRunner : IScriptRunner
                     case "paste":
                         Paste();
                         break;
+                    case "simulatekey":
+                    case "sendkeys":
+                        SimulateKeys(step);
+                        break;
+                    case "simulateinput":
+                    case "typeinput":
+                        SimulateInput(step);
+                        break;
+                    case "screenshot":
+                        Screenshot(step, context, scriptPath);
+                        break;
                     case "exec":
                         ExecExternal(step, context, state);
                         break;
@@ -126,6 +141,21 @@ public class JsonRunner : IScriptRunner
             : step.TryGetProperty(name, out v) && v.ValueKind == JsonValueKind.False
                 ? false
                 : fallback;
+    }
+
+    private static int GetInt(JsonElement step, string name, int fallback = 0)
+    {
+        if (!step.TryGetProperty(name, out var v))
+            return fallback;
+
+        if (v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var i))
+            return i;
+
+        if (v.ValueKind == JsonValueKind.String &&
+            int.TryParse(v.GetString(), out i))
+            return i;
+
+        return fallback;
     }
 
     private static IEnumerable<string> GetStringArray(JsonElement step, string name)
@@ -225,4 +255,349 @@ public class JsonRunner : IScriptRunner
         }
         catch { }
     }
+
+    private static void SimulateKeys(JsonElement step)
+    {
+        string hotkey = GetString(step, "keys",
+            GetString(step, "key", ""));
+        if (string.IsNullOrWhiteSpace(hotkey)) return;
+
+        bool normalize = GetBool(step, "normalize", true);
+        int preDelay = GetInt(step, "preDelayMs", 0);
+        int postDelay = GetInt(step, "postDelayMs", 0);
+
+        string keys = normalize ? ToSendKeys(hotkey) : hotkey;
+        if (string.IsNullOrWhiteSpace(keys)) return;
+
+        try
+        {
+            StaRunner.Run(() =>
+            {
+                if (preDelay > 0) Thread.Sleep(preDelay);
+                SendKeys.SendWait(keys);
+                if (postDelay > 0) Thread.Sleep(postDelay);
+            });
+        }
+        catch { }
+    }
+
+    private static void SimulateInput(JsonElement step)
+    {
+        string text = GetString(step, "text",
+            GetString(step, "value", ""));
+
+        int perCharDelay = GetInt(step, "perCharDelayMs", 0);
+        int preDelay = GetInt(step, "preDelayMs", 0);
+        int postDelay = GetInt(step, "postDelayMs", 0);
+        bool ensureEnglish = GetBool(step, "ensureEnglish", false);
+
+
+        try
+        {
+            StaRunner.Run(() =>
+            {
+                if (ensureEnglish)
+                    EnsureEnglishInput();
+
+                if (preDelay > 0) Thread.Sleep(preDelay);
+
+                if (perCharDelay > 0)
+                    TypeUnicodeSlow(text ?? "", perCharDelay);
+                else
+                    TypeUnicode(text ?? "");
+
+                if (postDelay > 0) Thread.Sleep(postDelay);
+            });
+        }
+        catch { }
+    }
+
+    private static void Screenshot(JsonElement step, ScriptContext context, string scriptPath)
+    {
+        string saveTo = GetString(step, "saveTo", "clipboard").Trim().ToLowerInvariant();
+        string tool = GetString(step, "tool", "default").Trim().ToLowerInvariant();
+        string path = GetString(step, "path", "");
+        int delayMs = GetInt(step, "delayMs", 0);
+        int timeoutMs = GetInt(step, "timeoutMs", 8000);
+
+        ResolveScreenshotTool(scriptPath, out var cfgTool, out var cfgPath);
+
+        string finalTool = tool == "system" || tool == "custom" ? tool : cfgTool;
+        string finalPath = !string.IsNullOrWhiteSpace(path) ? path : cfgPath;
+
+        if (delayMs > 0)
+            Thread.Sleep(delayMs);
+
+        bool toolExplicit = tool == "custom" || tool == "system";
+
+        if (finalTool == "custom")
+        {
+            if (string.IsNullOrWhiteSpace(finalPath) || !File.Exists(finalPath))
+            {
+                if (toolExplicit && tool == "custom")
+                    return;
+
+                // fallback to system silently
+                finalTool = "system";
+            }
+        }
+
+        if (finalTool == "custom")
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = finalPath,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                Logging.Write($"Screenshot tool launch failed: {ex}");
+                return;
+            }
+        }
+        else
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("ms-screenclip:") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                Logging.Write($"Screenshot launch failed: {ex}");
+                return;
+            }
+        }
+
+        Image? img = WaitClipboardImage(timeoutMs);
+        if (img == null)
+        {
+            context.NotifyMessage = "Screenshot canceled or timed out.";
+            return;
+        }
+
+        try
+        {
+            if (saveTo == "file")
+            {
+                string outPath = path;
+                if (string.IsNullOrWhiteSpace(outPath))
+                {
+                    string tempDir = Path.Combine(Path.GetTempPath(), "Simpler");
+                    Directory.CreateDirectory(tempDir);
+                    outPath = Path.Combine(tempDir, "screenshot_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".png");
+                }
+                else
+                {
+                    string dir = Path.GetDirectoryName(outPath) ?? "";
+                    if (!string.IsNullOrWhiteSpace(dir))
+                        Directory.CreateDirectory(dir);
+                    if (string.IsNullOrWhiteSpace(Path.GetExtension(outPath)))
+                        outPath += ".png";
+                }
+
+                using var bmp = new Bitmap(img);
+                bmp.Save(outPath, ImageFormat.Png);
+                context.OutputText = outPath;
+            }
+        }
+        finally
+        {
+            img.Dispose();
+        }
+    }
+
+    private static Image? WaitClipboardImage(int timeoutMs)
+    {
+        var sw = Stopwatch.StartNew();
+        while (timeoutMs <= 0 || sw.ElapsedMilliseconds < timeoutMs)
+        {
+            Image? img = null;
+            try
+            {
+                img = StaRunner.Run(() => Clipboard.ContainsImage() ? Clipboard.GetImage() : null);
+            }
+            catch { }
+
+            if (img != null)
+                return img;
+
+            Thread.Sleep(100);
+        }
+
+        return null;
+    }
+
+    private static void ResolveScreenshotTool(string scriptPath, out string tool, out string customPath)
+    {
+        tool = "system";
+        customPath = "";
+
+        try
+        {
+            string settingsPath = GetScreenshotSettingsPath(scriptPath);
+            if (!File.Exists(settingsPath)) return;
+
+            string text = (File.ReadAllText(settingsPath) ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(text)) return;
+
+            if (text.StartsWith("custom|", StringComparison.OrdinalIgnoreCase))
+            {
+                tool = "custom";
+                customPath = text.Substring("custom|".Length).Trim();
+                return;
+            }
+
+            if (text.Equals("custom", StringComparison.OrdinalIgnoreCase))
+            {
+                tool = "custom";
+                return;
+            }
+
+            if (text.Equals("system", StringComparison.OrdinalIgnoreCase) ||
+                text.Equals("default", StringComparison.OrdinalIgnoreCase))
+            {
+                tool = "system";
+                return;
+            }
+        }
+        catch { }
+    }
+
+    private static string GetScreenshotSettingsPath(string scriptPath)
+    {
+        string dir = Path.GetDirectoryName(scriptPath) ?? "";
+        return Path.Combine(dir, "_screenshot_tool.txt");
+    }
+
+    private static string ToSendKeys(string hotkey)
+    {
+        if (string.IsNullOrWhiteSpace(hotkey)) return "";
+        return hotkey
+            .Replace(" ", "")
+            .Replace("Ctrl+", "^")
+            .Replace("Alt+", "%")
+            .Replace("Shift+", "+")
+            .Replace("Win+", "#")
+            .ToLowerInvariant();
+    }
+
+    private const uint INPUT_KEYBOARD = 1;
+    private const uint KEYEVENTF_KEYUP = 0x0002;
+    private const uint KEYEVENTF_UNICODE = 0x0004;
+    private const uint WM_INPUTLANGCHANGEREQUEST = 0x0050;
+    private const uint KLF_ACTIVATE = 0x00000001;
+
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern IntPtr LoadKeyboardLayout(string pwszKLID, uint Flags);
+
+    [DllImport("user32.dll")] private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+    [DllImport("imm32.dll")] private static extern IntPtr ImmGetContext(IntPtr hWnd);
+    [DllImport("imm32.dll")] private static extern bool ImmSetOpenStatus(IntPtr hIMC, bool fOpen);
+    [DllImport("imm32.dll")] private static extern bool ImmReleaseContext(IntPtr hWnd, IntPtr hIMC);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct INPUT
+    {
+        public uint type;
+        public INPUTUNION u;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct INPUTUNION
+    {
+        [FieldOffset(0)] public KEYBDINPUT ki;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    private static void EnsureEnglishInput()
+    {
+        var hwnd = GetForegroundWindow();
+        if (hwnd == IntPtr.Zero) return;
+
+        var hIMC = ImmGetContext(hwnd);
+        if (hIMC != IntPtr.Zero)
+        {
+            ImmSetOpenStatus(hIMC, false);
+            ImmReleaseContext(hwnd, hIMC);
+        }
+
+        var hkl = LoadKeyboardLayout("00000409", KLF_ACTIVATE);
+        SendMessage(hwnd, WM_INPUTLANGCHANGEREQUEST, IntPtr.Zero, hkl);
+    }
+
+
+
+    private static void TypeUnicode(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        var inputs = new List<INPUT>(text.Length * 2);
+        foreach (var ch in text)
+        {
+            inputs.Add(new INPUT
+            {
+                type = INPUT_KEYBOARD,
+                u = new INPUTUNION
+                {
+                    ki = new KEYBDINPUT { wVk = 0, wScan = ch, dwFlags = KEYEVENTF_UNICODE }
+                }
+            });
+            inputs.Add(new INPUT
+            {
+                type = INPUT_KEYBOARD,
+                u = new INPUTUNION
+                {
+                    ki = new KEYBDINPUT { wVk = 0, wScan = ch, dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP }
+                }
+            });
+        }
+
+        var sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf(typeof(INPUT)));
+        if (sent == 0)
+            SendKeys.SendWait(text);
+    }
+
+    private static void TypeUnicodeSlow(string text, int perCharDelayMs)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+
+        foreach (var ch in text)
+        {
+            var inputs = new INPUT[2];
+            inputs[0] = new INPUT
+            {
+                type = INPUT_KEYBOARD,
+                u = new INPUTUNION
+                {
+                    ki = new KEYBDINPUT { wVk = 0, wScan = ch, dwFlags = KEYEVENTF_UNICODE }
+                }
+            };
+            inputs[1] = new INPUT
+            {
+                type = INPUT_KEYBOARD,
+                u = new INPUTUNION
+                {
+                    ki = new KEYBDINPUT { wVk = 0, wScan = ch, dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP }
+                }
+            };
+
+            SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
+            Thread.Sleep(perCharDelayMs);
+        }
+    }
 }
+
+
+

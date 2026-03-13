@@ -1,4 +1,4 @@
-name: Build and Release
+﻿name: Build and Release
 
 on:
   workflow_dispatch:
@@ -34,7 +34,7 @@ jobs:
           Copy-Item -Force "$publish/Simpler.Host.exe" "$stage/Simpler.exe"
           Copy-Item -Force "$publish/Simpler.Core.dll" "$stage/Simpler.Core.dll"
           Copy-Item -Force "README.md" "$stage/README.md"
-          Copy-Item -Recurse -Force "scripts" "$stage/scripts"
+          New-Item -ItemType Directory -Path "$stage/scripts" | Out-Null
           if (Test-Path "scripts/README.md") { Copy-Item -Force "scripts/README.md" "$stage/scripts/README.md" }
           Compress-Archive -Path "$stage/*" -DestinationPath "Simpler-windows.zip" -Force
 
@@ -45,6 +45,7 @@ jobs:
             Simpler-windows.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
 
 

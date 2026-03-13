@@ -1,20 +1,21 @@
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
-using System.Windows.Controls.Primitives;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using Hardcodet.Wpf.TaskbarNotification;
 
 namespace Simpler.Host;
 
-// ©¤©¤ Tray ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+// -- Tray --
 public class TrayManager : IDisposable
 {
     private TaskbarIcon? _tray;
     private Icon? _icon;
+    private System.Windows.Controls.ContextMenu? _menu;
 
     public void Initialize()
     {
@@ -26,7 +27,10 @@ public class TrayManager : IDisposable
         };
         _tray.TrayMouseDoubleClick += (_, _) => App.ShowLauncher();
 
-        var menu = new System.Windows.Controls.ContextMenu();
+        _menu = new System.Windows.Controls.ContextMenu
+        {
+            StaysOpen = false
+        };
 
         var showItem = new System.Windows.Controls.MenuItem
             { Header = "Show Panel" };
@@ -48,12 +52,15 @@ public class TrayManager : IDisposable
             Application.Current.Shutdown();
         };
 
-        menu.Items.Add(showItem);
-        menu.Items.Add(startupItem);
-        menu.Items.Add(new System.Windows.Controls.Separator());
-        menu.Items.Add(quitItem);
-        menu.Placement = PlacementMode.MousePoint;
-        _tray.ContextMenu = menu;
+        _menu.Items.Add(showItem);
+        _menu.Items.Add(startupItem);
+        _menu.Items.Add(new System.Windows.Controls.Separator());
+        _menu.Items.Add(quitItem);
+        _menu.Placement = PlacementMode.AbsolutePoint;
+
+        // Keep a ContextMenu assigned so WPF handles focus/close properly.
+        _tray.ContextMenu = _menu;
+        _tray.TrayRightMouseUp += (_, _) => ShowMenuAtCursor();
     }
 
     private static Icon CreateIcon()
@@ -78,6 +85,32 @@ public class TrayManager : IDisposable
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(IntPtr hIcon);
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out POINT lpPoint);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForSystem();
+
+    private void ShowMenuAtCursor()
+    {
+        if (_menu == null) return;
+        if (!GetCursorPos(out var pt)) return;
+
+        _menu.IsOpen = false;
+        _menu.Placement = PlacementMode.AbsolutePoint;
+        double scale = 96.0 / GetDpiForSystem();
+        _menu.HorizontalOffset = pt.X * scale;
+        _menu.VerticalOffset = pt.Y * scale;
+        _menu.IsOpen = true;
+    }
+
     public void Dispose()
     {
         _tray?.Dispose();
@@ -85,7 +118,7 @@ public class TrayManager : IDisposable
     }
 }
 
-// ©¤©¤ Global Hotkey (Win32) ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+// -- Global Hotkey (Win32) --
 public class GlobalHotkey : IDisposable
 {
     private const int WM_HOTKEY = 0x0312;
@@ -171,4 +204,3 @@ public class GlobalHotkey : IDisposable
 
     public void Dispose() => Unregister();
 }
-

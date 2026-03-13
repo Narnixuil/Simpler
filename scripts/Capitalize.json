@@ -1,0 +1,21 @@
+{
+  "icon": "Aa",
+  "description": "Capitalize words (Title Case) from selected text",
+  "name": "Capitalize",
+  "steps": [
+    {
+      "codeLines": [
+        "if (string.IsNullOrEmpty(context.SelectedText)) {",
+        "    context.Notify(\"No selected text detected\");",
+        "    return;",
+        "}",
+        "var ti = System.Globalization.CultureInfo.CurrentCulture.TextInfo;",
+        "var text = context.SelectedText;",
+        "var lower = text.ToLower();",
+        "var result = ti.ToTitleCase(lower);",
+        "context.SetOutputText(result);"
+      ],
+      "op": "csharp"
+    }
+  ]
+}

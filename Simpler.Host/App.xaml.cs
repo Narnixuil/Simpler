@@ -1,6 +1,9 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Threading;
 using Simpler.Core;
 
 namespace Simpler.Host;
@@ -49,7 +52,9 @@ public partial class App : Application
         _tray = new TrayManager();
         _tray.Initialize();
 
-        // Register Ctrl+` as global hotkey.
+        ShowStartupToast();
+
+        // Register Ctrl+ as global hotkey.
         // Use GlobalHotkey helper (defined in TrayManager.cs below).
         _hotkey = new GlobalHotkey(
             System.Windows.Input.ModifierKeys.Control,
@@ -76,6 +81,57 @@ public partial class App : Application
         });
     }
 
+    private static void ShowStartupToast()
+    {
+        Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            var toast = new Window
+            {
+                Width = 260,
+                Height = 44,
+                WindowStyle = WindowStyle.None,
+                AllowsTransparency = true,
+                Background = Brushes.Transparent,
+                Topmost = true,
+                ShowInTaskbar = false,
+                ResizeMode = ResizeMode.NoResize
+            };
+
+            var border = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(220, 30, 30, 30)),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 8, 12, 8)
+            };
+
+            var text = new TextBlock
+            {
+                Text = "Simpler is ready",
+                Foreground = Brushes.White,
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+
+            border.Child = text;
+            toast.Content = border;
+
+            var work = SystemParameters.WorkArea;
+            toast.Left = work.Right - toast.Width - 16;
+            toast.Top = work.Bottom - toast.Height - 16;
+
+            toast.Show();
+
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                toast.Close();
+            };
+            timer.Start();
+        });
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
         _hotkey?.Unregister();
@@ -83,4 +139,3 @@ public partial class App : Application
         base.OnExit(e);
     }
 }
-

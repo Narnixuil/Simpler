@@ -1,4 +1,4 @@
-# Simpler
+﻿# Simpler
 
 A lightweight Windows tray app that runs small text and file scripts from a searchable launcher.
 
@@ -19,6 +19,9 @@ dotnet run --project "D:\Programs\Simpler\Simpler.Host\Simpler.Host.csproj"
 ## Scripts
 Scripts live in `scripts/` at the solution root (or next to the exe in a release zip).
 They are not bundled into the exe, so you can add/remove/modify scripts freely.
+
+The release zip includes **only `scripts/README.md`**. Download the scripts you want from the library:
+- https://github.com/Narnixuil/Simpler/tree/main/scripts
 
 ### C# (.csx)
 Entry point:

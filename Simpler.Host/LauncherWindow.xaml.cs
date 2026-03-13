@@ -1,4 +1,4 @@
-using System;
+ï»¿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -11,6 +11,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using Simpler.Core;
 using Simpler.Core.Context;
 using Simpler.Core.Models;
@@ -110,7 +111,7 @@ public partial class LauncherWindow : Window
         _scripts = ScriptDiscovery.Discover(_scriptsDir, _registry);
         RenderCards(_scripts);
         StatusLabel.Content =
-            $"{_scripts.Count} scripts ¡¤ {_scriptsDir}";
+            $"{_scripts.Count} scripts è·¯ {_scriptsDir}";
     }
 
     private void RenderCards(IEnumerable<ScriptMeta> scripts)
@@ -147,7 +148,8 @@ public partial class LauncherWindow : Window
             HorizontalAlignment = HorizontalAlignment.Center
         };
         stack.Children.Add(iconText);
-        stack.Children.Add(nameText);
+        stack.Children.Add(nameText);
+
 
         var border = new Border
         {
@@ -176,6 +178,9 @@ public partial class LauncherWindow : Window
             border.MouseLeave += (_, _) =>
                 border.Background = new SolidColorBrush(
                     Color.FromRgb(0x2A, 0x2A, 0x2A));
+
+            if (IsScreenshotScript(script))
+                border.ContextMenu = BuildScreenshotContextMenu(script);
         }
 
         return border;
@@ -194,7 +199,7 @@ public partial class LauncherWindow : Window
             ScriptContext context;
             try
             {
-                // ContextCapture internally uses StaRunner ¡ª safe here.
+                // ContextCapture internally uses StaRunner éˆ¥?safe here.
                 context = await ContextCapture.GrabAsync();
             }
             catch (Exception ex)
@@ -215,7 +220,7 @@ public partial class LauncherWindow : Window
 
             try
             {
-                // ContextApply internally uses StaRunner ¡ª safe here.
+                // ContextApply internally uses StaRunner éˆ¥?safe here.
                 await ContextApply.CommitAsync(context);
             }
             catch (Exception ex)
@@ -267,18 +272,145 @@ public partial class LauncherWindow : Window
     {
         if (e.Key == Key.Escape) Close();
     }
+
+    private static bool IsScreenshotScript(ScriptMeta script)
+    {
+        if (!string.IsNullOrWhiteSpace(script.Name) &&
+            script.Name.StartsWith("Screenshot", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (!string.IsNullOrWhiteSpace(script.FileName) &&
+            script.FileName.StartsWith("Screenshot", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
+    }
+
+    private ContextMenu BuildScreenshotContextMenu(ScriptMeta script)
+    {
+        var menu = new ContextMenu();
+
+        var systemItem = new MenuItem
+        {
+            Header = "Screenshot Tool: System (Default)",
+            IsCheckable = true
+        };
+        var customItem = new MenuItem
+        {
+            Header = "Screenshot Tool: Custom...",
+            IsCheckable = true
+        };
+
+        menu.Opened += (_, _) =>
+        {
+            var cfg = ReadScreenshotToolConfig(script);
+            systemItem.IsChecked = cfg.Tool == "system";
+            customItem.IsChecked = cfg.Tool == "custom";
+        };
+
+        systemItem.Click += (_, _) =>
+        {
+            WriteScreenshotToolConfig(script, "system", "");
+        };
+
+        customItem.Click += (_, _) =>
+        {
+            string path = PickScreenshotToolPath();
+            if (!string.IsNullOrWhiteSpace(path))
+                WriteScreenshotToolConfig(script, "custom", path);
+        };
+
+        menu.Items.Add(systemItem);
+        menu.Items.Add(customItem);
+
+        return menu;
+    }
+
+    private string PickScreenshotToolPath()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Select Screenshot Tool",
+            Filter = "Executables (*.exe)|*.exe|All files (*.*)|*.*",
+            CheckFileExists = true,
+            CheckPathExists = true
+        };
+
+        StopFocusTimer();
+        try
+        {
+            bool? result = dialog.ShowDialog(this);
+            return result == true ? dialog.FileName : "";
+        }
+        finally
+        {
+            _openedAt = DateTime.Now;
+            StartFocusTimer();
+        }
+    }
+
+    private ScreenshotToolConfig ReadScreenshotToolConfig(ScriptMeta script)
+    {
+        var cfg = new ScreenshotToolConfig();
+        try
+        {
+            string settingsPath = GetScreenshotSettingsPath(script);
+            if (!File.Exists(settingsPath)) return cfg;
+
+            string text = (File.ReadAllText(settingsPath) ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(text)) return cfg;
+
+            if (text.StartsWith("custom|", StringComparison.OrdinalIgnoreCase))
+            {
+                cfg.Tool = "custom";
+                cfg.Path = text.Substring("custom|".Length).Trim();
+                return cfg;
+            }
+
+            if (text.Equals("custom", StringComparison.OrdinalIgnoreCase))
+            {
+                cfg.Tool = "custom";
+                return cfg;
+            }
+
+            if (text.Equals("system", StringComparison.OrdinalIgnoreCase) ||
+                text.Equals("default", StringComparison.OrdinalIgnoreCase))
+            {
+                cfg.Tool = "system";
+                return cfg;
+            }
+        }
+        catch { }
+
+        return cfg;
+    }
+
+    private void WriteScreenshotToolConfig(ScriptMeta script, string tool, string path)
+    {
+        try
+        {
+            string settingsPath = GetScreenshotSettingsPath(script);
+            string content = tool == "custom" && !string.IsNullOrWhiteSpace(path)
+                ? "custom|" + path
+                : "system";
+            File.WriteAllText(settingsPath, content);
+        }
+        catch (Exception ex)
+        {
+            ShowNotification("Failed to save screenshot tool: " + ex.Message);
+        }
+    }
+
+    private string GetScreenshotSettingsPath(ScriptMeta script)
+    {
+        string dir = Path.GetDirectoryName(script.Path) ?? _scriptsDir;
+        return Path.Combine(dir, "_screenshot_tool.txt");
+    }
+
+    private sealed class ScreenshotToolConfig
+    {
+        public string Tool { get; set; } = "system";
+        public string Path { get; set; } = "";
+    }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
