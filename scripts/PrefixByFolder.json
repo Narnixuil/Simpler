@@ -1,0 +1,46 @@
+{
+  "name": "Prefix by Folder",
+  "description": "Prefix selected files with their parent folder name",
+  "icon": "🏷️",
+  "steps": [
+    {
+      "op": "csharp",
+      "codeLines": [
+        "if (context.SelectedFiles.Count == 0) { context.Notify(\"No selected files.\"); return; }",
+        "var files = context.SelectedFiles.Where(File.Exists).ToList();",
+        "if (files.Count == 0) { context.Notify(\"No valid files selected.\"); return; }",
+        "",
+        "string EnsureUnique(string dir, string name)",
+        "{",
+        "    var path = Path.Combine(dir, name);",
+        "    if (!File.Exists(path)) return name;",
+        "    var baseName = Path.GetFileNameWithoutExtension(name);",
+        "    var ext = Path.GetExtension(name);",
+        "    for (int i = 1; i < 10000; i++)",
+        "    {",
+        "        var candidate = $\"{baseName}_{i}{ext}\";",
+        "        if (!File.Exists(Path.Combine(dir, candidate))) return candidate;",
+        "    }",
+        "    return name;",
+        "}",
+        "",
+        "int count = 0;",
+        "foreach (var path in files)",
+        "{",
+        "    var dir = Path.GetDirectoryName(path);",
+        "    if (string.IsNullOrWhiteSpace(dir)) continue;",
+        "    var folder = new DirectoryInfo(dir).Name;",
+        "    var oldName = Path.GetFileName(path);",
+        "    var newName = $\"{folder}_{oldName}\";",
+        "    newName = EnsureUnique(dir, newName);",
+        "    if (!string.Equals(oldName, newName, StringComparison.Ordinal))",
+        "    {",
+        "        context.RenameFile(path, newName);",
+        "        count++;",
+        "    }",
+        "}",
+        "context.Notify($\"Renamed {count} file(s).\");"
+      ]
+    }
+  ]
+}

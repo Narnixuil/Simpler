@@ -1,13 +1,52 @@
-# Simpler (Repository Root)
+# Simpler
 
-This repository contains three parts:
-- `simpler/`: Main application source code
-- `Simplerscripts/`: Scripts library (reusable scripts)
-- `.github/workflows/`: Build and release workflow
+A lightweight Windows tray app that runs small text and file scripts from a searchable launcher.
 
-If you are a user, download the packaged version from GitHub Releases.
-If you are a developer, enter `simpler/` to view the code and docs.
+## Requirements
+- .NET 8 SDK (Windows)
+- Python 3 (optional, required for `.py` scripts)
 
-Entry docs:
-- [simpler/README.md](simpler/README.md)
-- [Simplerscripts/README.md](Simplerscripts/README.md)
+## Run
+```powershell
+dotnet run --project "D:\Programs\Simpler\Simpler.Host\Simpler.Host.csproj"
+```
+
+## Usage
+- Press `Ctrl + \`` to open/close the launcher.
+- Click a script card to run it.
+- Click outside the launcher to close it.
+
+## Scripts
+Scripts live in `scripts/` at the solution root (or next to the exe in a release zip).
+They are not bundled into the exe, so you can add/remove/modify scripts freely.
+
+### C# (.csx)
+Entry point:
+```csharp
+async Task Run(ScriptContext context)
+```
+
+### JavaScript (.js)
+Entry point:
+```js
+function run(context) { }
+```
+
+### Python (.py)
+Entry point:
+```py
+def run(ctx):
+    pass
+```
+
+### PowerShell (.ps1)
+Entry point:
+```powershell
+function Run {
+    param($ctx)
+}
+```
+
+## Logging
+Runtime logs are written to:
+`bin/Debug/net8.0-windows/logs/simpler.log`

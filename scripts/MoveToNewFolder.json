@@ -1,0 +1,29 @@
+{
+  "name": "Move to New Folder",
+  "description": "Move selected files/folders into a newly created folder",
+  "icon": "📁",
+  "steps": [
+    {
+      "op": "csharp",
+      "codeLines": [
+        "if (context.SelectedFiles.Count == 0) { return; }",
+        "var first = context.SelectedFiles[0];",
+        "var baseDir = Directory.Exists(first) ? Path.GetDirectoryName(first) : Path.GetDirectoryName(first);",
+        "if (string.IsNullOrWhiteSpace(baseDir)) { return; }",
+        "var newFolder = Path.Combine(baseDir, $\"New Folder {DateTime.Now:yyyyMMdd_HHmmss}\");",
+        "Directory.CreateDirectory(newFolder);",
+        "foreach (var path in context.SelectedFiles)",
+        "{",
+        "    try",
+        "    {",
+        "        var name = Path.GetFileName(path);",
+        "        var target = Path.Combine(newFolder, name);",
+        "        if (Directory.Exists(path)) Directory.Move(path, target);",
+        "        else if (File.Exists(path)) File.Move(path, target);",
+        "    }",
+        "    catch (Exception ex) { Simpler.Core.Logging.Write($\"MoveToNewFolder failed: {path}\\n{ex}\"); }",
+        "}"
+      ]
+    }
+  ]
+}

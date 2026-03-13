@@ -1,0 +1,17 @@
+{
+  "icon": "🔠",
+  "description": "Convert selected text to uppercase",
+  "name": "Uppercase",
+  "steps": [
+    {
+      "codeLines": [
+        "if (string.IsNullOrEmpty(context.SelectedText)) {",
+        "    context.Notify(\"No selected text detected\");",
+        "    return;",
+        "}",
+        "context.SetOutputText(context.SelectedText.ToUpper());"
+      ],
+      "op": "csharp"
+    }
+  ]
+}

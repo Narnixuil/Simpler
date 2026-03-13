@@ -24,3 +24,12 @@ dist/
 
 # Build artifacts
 *.zip
+
+
+# .NET build
+bin/
+obj/
+.vs/
+
+# Runtime logs
+logs/
