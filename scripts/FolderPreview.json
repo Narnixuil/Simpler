@@ -1,7 +1,7 @@
 {
   "name": "Folder Preview",
-  "description": "Preview folder tree in a dialog",
   "icon": "🗂️",
+  "description": "Preview folder tree in a dialog",
   "steps": [
     {
       "op": "csharp",

@@ -1,7 +1,7 @@
 {
-  "name": "Upper Case",
-  "icon": "🔠",
-  "description": "Convert selected text to upper case",
+  "name": "Lower Case",
+  "icon": "🔡",
+  "description": "Convert selected text to lower case",
   "steps": [
     {
       "codeLines": [
@@ -9,7 +9,7 @@
         "    context.Notify(\"No selected text detected\");",
         "    return;",
         "}",
-        "context.SetOutputText(context.SelectedText.ToUpper());"
+        "context.SetOutputText(context.SelectedText.ToLower());"
       ],
       "op": "csharp"
     }

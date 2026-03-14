@@ -1,7 +1,7 @@
 {
   "name": "EVER Rename",
-  "description": "Batch rename files with a dedicated editor",
   "icon": "✏️",
+  "description": "Batch rename files with a dedicated editor",
   "steps": [
     {
       "op": "csharp",

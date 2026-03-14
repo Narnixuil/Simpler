@@ -124,7 +124,7 @@ public class GlobalHotkey : IDisposable
     private const int WM_HOTKEY = 0x0312;
     private static int _idCounter = 9000;
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterHotKey(
         IntPtr hWnd, int id, uint fsModifiers, uint vk);
 
@@ -137,6 +137,11 @@ public class GlobalHotkey : IDisposable
     private readonly int _id;
     private HwndSource? _source;
     private Window? _helperWindow;
+    private bool _isRegistered;
+    private int _lastError;
+
+    public bool IsRegistered => _isRegistered;
+    public int LastError => _lastError;
 
     public GlobalHotkey(ModifierKeys mods, Key key, Action callback)
     {
@@ -146,9 +151,9 @@ public class GlobalHotkey : IDisposable
         _id       = System.Threading.Interlocked.Increment(ref _idCounter);
     }
 
-    public void Register()
+    public bool Register()
     {
-        if (_source != null) return;
+        if (_source != null) return _isRegistered;
 
         // We need an HWND; create a hidden helper window.
         _helperWindow = new Window
@@ -171,7 +176,21 @@ public class GlobalHotkey : IDisposable
         if (_mods.HasFlag(ModifierKeys.Windows)) mods |= 0x0008;
 
         uint vk = (uint)KeyInterop.VirtualKeyFromKey(_key);
-        RegisterHotKey(_source!.Handle, _id, mods, vk);
+        bool ok = RegisterHotKey(_source!.Handle, _id, mods, vk);
+        if (!ok)
+        {
+            _lastError = Marshal.GetLastWin32Error();
+            _source.RemoveHook(WndProc);
+            _source.Dispose();
+            _source = null;
+            _helperWindow.Close();
+            _helperWindow = null;
+            _isRegistered = false;
+            return false;
+        }
+
+        _isRegistered = true;
+        return true;
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg,

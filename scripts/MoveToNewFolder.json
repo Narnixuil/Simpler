@@ -1,7 +1,7 @@
 {
   "name": "Move to New Folder",
-  "description": "Move selected files/folders into a newly created folder",
   "icon": "📁",
+  "description": "Move selected files/folders into a newly created folder",
   "steps": [
     {
       "op": "csharp",

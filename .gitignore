@@ -1,4 +1,4 @@
-# Python
+ï»? Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -33,3 +33,7 @@ obj/
 
 # Runtime logs
 logs/
+# Local script tool configs
+scripts/_everything_path.txt
+scripts/_screenshot_tool.txt
+AGENTS.md

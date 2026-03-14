@@ -1,0 +1,19 @@
+{
+  "name": "Title Case",
+  "icon": "Aa",
+  "description": "Convert selected text to title case",
+  "steps": [
+    {
+      "codeLines": [
+        "if (string.IsNullOrEmpty(context.SelectedText)) {",
+        "    context.Notify(\"No selected text detected\");",
+        "    return;",
+        "}",
+        "var lower = context.SelectedText.ToLower();",
+        "var titleCase = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(lower);",
+        "context.SetOutputText(titleCase);"
+      ],
+      "op": "csharp"
+    }
+  ]
+}

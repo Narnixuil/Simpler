@@ -1,10 +1,13 @@
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Simpler.Core;
+using Simpler.Core.Context;
+using Simpler.Core.Models;
 
 namespace Simpler.Host;
 
@@ -81,13 +84,63 @@ public partial class App : Application
         });
     }
 
+    public static void RunScriptByPath(string scriptPath)
+    {
+        _ = Task.Run(async () =>
+        {
+            ScriptContext context;
+            try
+            {
+                context = await ContextCapture.GrabAsync();
+            }
+            catch (Exception ex)
+            {
+                ShowNotification($"Capture error: {ex.Message}");
+                return;
+            }
+
+            var runner = Registry.GetRunner(Path.GetExtension(scriptPath));
+            if (runner == null)
+            {
+                ShowNotification("No runner for this file type");
+                return;
+            }
+
+            await runner.RunAsync(scriptPath, context);
+
+            try
+            {
+                await ContextApply.CommitAsync(context);
+            }
+            catch (Exception ex)
+            {
+                context.NotifyMessage ??= $"Apply error: {ex.Message}";
+            }
+
+            if (!string.IsNullOrEmpty(context.NotifyMessage))
+                ShowNotification(context.NotifyMessage);
+        });
+    }
+
+    public static void ShowNotification(string message)
+    {
+        Application.Current.Dispatcher.InvokeAsync(() =>
+            MessageBox.Show(message, "Simpler",
+                MessageBoxButton.OK, MessageBoxImage.Information));
+    }
+
     private static void ShowStartupToast()
+    {
+        ShowToast("Simpler is ready", 3);
+    }
+
+    public static void ShowToast(string message, int seconds = 3)
     {
         Application.Current.Dispatcher.InvokeAsync(() =>
         {
             var toast = new Window
             {
-                Width = 260,
+                Width = 320,
                 Height = 44,
                 WindowStyle = WindowStyle.None,
                 AllowsTransparency = true,
@@ -106,11 +159,12 @@ public partial class App : Application
 
             var text = new TextBlock
             {
-                Text = "Simpler is ready",
+                Text = message,
                 Foreground = Brushes.White,
                 FontSize = 12,
                 VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center
+                HorizontalAlignment = HorizontalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap
             };
 
             border.Child = text;
@@ -122,7 +176,7 @@ public partial class App : Application
 
             toast.Show();
 
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
             timer.Tick += (_, _) =>
             {
                 timer.Stop();
@@ -136,6 +190,7 @@ public partial class App : Application
     {
         _hotkey?.Unregister();
         _tray?.Dispose();
+        LauncherWindow.CleanupHotkeysOnExit();
         base.OnExit(e);
     }
 }

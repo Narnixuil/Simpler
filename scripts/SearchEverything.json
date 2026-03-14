@@ -1,7 +1,7 @@
 {
+  "name": "Search Everything",
   "icon": "🔎",
   "description": "Search selected text or filename in Everything",
-  "name": "Search Everything",
   "steps": [
     {
       "op": "csharp",

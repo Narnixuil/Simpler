@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -26,6 +26,13 @@ public partial class LauncherWindow : Window
     private DispatcherTimer? _focusTimer;
     private IntPtr _hwnd;
     private DateTime _openedAt;
+
+    private static readonly Dictionary<string, GlobalHotkey> _scriptHotkeys =
+        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, (ModifierKeys Mods, Key Key)> _scriptHotkeyDefs =
+        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, string> _hotkeyOwners =
+        new(StringComparer.OrdinalIgnoreCase);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
@@ -111,7 +118,7 @@ public partial class LauncherWindow : Window
         _scripts = ScriptDiscovery.Discover(_scriptsDir, _registry);
         RenderCards(_scripts);
         StatusLabel.Content =
-            $"{_scripts.Count} scripts 路 {_scriptsDir}";
+            $"{_scripts.Count} scripts in {_scriptsDir}";
     }
 
     private void RenderCards(IEnumerable<ScriptMeta> scripts)
@@ -167,7 +174,9 @@ public partial class LauncherWindow : Window
         if (!script.HasRun)
         {
             border.Opacity = 0.4;
-            border.ToolTip = script.DisabledReason;
+            border.ToolTip = !string.IsNullOrWhiteSpace(script.DisabledReason)
+                ? script.DisabledReason
+                : script.Description;
         }
         else
         {
@@ -179,8 +188,10 @@ public partial class LauncherWindow : Window
                 border.Background = new SolidColorBrush(
                     Color.FromRgb(0x2A, 0x2A, 0x2A));
 
-            if (IsScreenshotScript(script))
-                border.ContextMenu = BuildScreenshotContextMenu(script);
+            if (!string.IsNullOrWhiteSpace(script.Description))
+                border.ToolTip = script.Description;
+
+            border.ContextMenu = BuildCardContextMenu(script);
         }
 
         return border;
@@ -192,45 +203,7 @@ public partial class LauncherWindow : Window
         if (border.Tag is not ScriptMeta script) return;
 
         Close(); // Close UI immediately.
-
-        // All heavy work on background thread.
-        _ = Task.Run(async () =>
-        {
-            ScriptContext context;
-            try
-            {
-                // ContextCapture internally uses StaRunner 鈥?safe here.
-                context = await ContextCapture.GrabAsync();
-            }
-            catch (Exception ex)
-            {
-                ShowNotification($"Capture error: {ex.Message}");
-                return;
-            }
-
-            var runner = _registry.GetRunner(
-                Path.GetExtension(script.Path));
-            if (runner == null)
-            {
-                ShowNotification("No runner for this file type");
-                return;
-            }
-
-            await runner.RunAsync(script.Path, context);
-
-            try
-            {
-                // ContextApply internally uses StaRunner 鈥?safe here.
-                await ContextApply.CommitAsync(context);
-            }
-            catch (Exception ex)
-            {
-                context.NotifyMessage ??= $"Apply error: {ex.Message}";
-            }
-
-            if (!string.IsNullOrEmpty(context.NotifyMessage))
-                ShowNotification(context.NotifyMessage);
-        });
+        App.RunScriptByPath(script.Path);
     }
 
     private static void ShowNotification(string message)
@@ -286,10 +259,326 @@ public partial class LauncherWindow : Window
         return false;
     }
 
-    private ContextMenu BuildScreenshotContextMenu(ScriptMeta script)
+    private ContextMenu BuildCardContextMenu(ScriptMeta script)
     {
-        var menu = new ContextMenu();
+        var menu = new ContextMenu
+        {
+            StaysOpen = false
+        };
 
+        var hotkeyItem = new MenuItem
+        {
+            Header = "Set Hotkey",
+            IsCheckable = true,
+            IsEnabled = script.HasRun
+        };
+
+        menu.Items.Add(hotkeyItem);
+
+        menu.Opened += (_, _) =>
+        {
+            hotkeyItem.IsChecked = EnsureHotkeyActive(script);
+        };
+
+        hotkeyItem.Click += (_, _) =>
+        {
+            if (!hotkeyItem.IsChecked)
+            {
+                UnregisterScriptHotkey(script);
+                DeleteHotkeyFile(script);
+                return;
+            }
+
+            if (!TryCaptureHotkey(out var mods, out var key))
+            {
+                hotkeyItem.IsChecked = false;
+                return;
+            }
+
+            if (!TryRegisterScriptHotkey(script, mods, key, out var error))
+            {
+                hotkeyItem.IsChecked = false;
+                if (!string.IsNullOrWhiteSpace(error))
+                    ShowNotification(error);
+                return;
+            }
+
+            SaveHotkeyFile(script, mods, key);
+            var displayName = GetScriptDisplayName(script);
+            App.ShowToast($"Set hotkey for {displayName}: {FormatHotkey(mods, key)}", 3);
+        };
+
+        if (IsScreenshotScript(script))
+        {
+            menu.Items.Add(new Separator());
+            AppendScreenshotContextMenu(menu, script);
+        }
+
+        return menu;
+    }
+
+    private bool EnsureHotkeyActive(ScriptMeta script)
+    {
+        if (_scriptHotkeyDefs.ContainsKey(script.Path))
+            return true;
+
+        if (!TryLoadHotkeyFile(script, out var mods, out var key))
+            return false;
+
+        if (TryRegisterScriptHotkey(script, mods, key, out _))
+            return true;
+
+        DeleteHotkeyFile(script);
+        return false;
+    }
+
+    private bool TryRegisterScriptHotkey(ScriptMeta script, ModifierKeys mods, Key key, out string? error)
+    {
+        error = null;
+        string signature = BuildHotkeySignature(mods, key);
+
+        if (_hotkeyOwners.TryGetValue(signature, out var owner) &&
+            !owner.Equals(script.Path, StringComparison.OrdinalIgnoreCase))
+        {
+            error = "Hotkey is already in use";
+            return false;
+        }
+
+        UnregisterScriptHotkey(script);
+
+        var hotkey = new GlobalHotkey(mods, key,
+            () => App.RunScriptByPath(script.Path));
+
+        if (!hotkey.Register())
+        {
+            error = "Failed to register hotkey (possibly in use)";
+            return false;
+        }
+
+        _scriptHotkeys[script.Path] = hotkey;
+        _scriptHotkeyDefs[script.Path] = (mods, key);
+        _hotkeyOwners[signature] = script.Path;
+        return true;
+    }
+
+    private void UnregisterScriptHotkey(ScriptMeta script)
+    {
+        if (_scriptHotkeyDefs.TryGetValue(script.Path, out var def))
+        {
+            var signature = BuildHotkeySignature(def.Mods, def.Key);
+            _hotkeyOwners.Remove(signature);
+            _scriptHotkeyDefs.Remove(script.Path);
+        }
+
+        if (_scriptHotkeys.TryGetValue(script.Path, out var hotkey))
+        {
+            hotkey.Unregister();
+            _scriptHotkeys.Remove(script.Path);
+        }
+    }
+
+    private static string BuildHotkeySignature(ModifierKeys mods, Key key)
+        => $"{(int)mods}:{key}";
+
+    private bool TryLoadHotkeyFile(ScriptMeta script, out ModifierKeys mods, out Key key)
+    {
+        mods = ModifierKeys.None;
+        key = Key.None;
+
+        try
+        {
+            string path = GetHotkeySettingsPath(script);
+            if (!File.Exists(path)) return false;
+
+            string text = (File.ReadAllText(path) ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(text)) return false;
+
+            var parts = text.Split('|');
+            if (parts.Length != 2) return false;
+            if (!int.TryParse(parts[0], out var modsValue)) return false;
+            if (!Enum.TryParse(parts[1], out Key parsedKey)) return false;
+
+            mods = (ModifierKeys)modsValue;
+            key = parsedKey;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void SaveHotkeyFile(ScriptMeta script, ModifierKeys mods, Key key)
+    {
+        try
+        {
+            string path = GetHotkeySettingsPath(script);
+            File.WriteAllText(path, $"{(int)mods}|{key}");
+        }
+        catch (Exception ex)
+        {
+            ShowNotification("Failed to save hotkey: " + ex.Message);
+        }
+    }
+
+    private void DeleteHotkeyFile(ScriptMeta script)
+    {
+        try
+        {
+            string path = GetHotkeySettingsPath(script);
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch { }
+    }
+
+    private string GetHotkeySettingsPath(ScriptMeta script)
+    {
+        string dir = Path.GetDirectoryName(script.Path) ?? _scriptsDir;
+        string name = Path.GetFileNameWithoutExtension(script.Path);
+        return Path.Combine(dir, $"_{name}.hotkey.txt");
+    }
+
+    private bool TryCaptureHotkey(out ModifierKeys mods, out Key key)
+    {
+        mods = ModifierKeys.None;
+        key = Key.None;
+
+        var dialog = new Window
+        {
+            Title = "Set Hotkey",
+            Width = 280,
+            Height = 120,
+            WindowStyle = WindowStyle.ToolWindow,
+            ResizeMode = ResizeMode.NoResize,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            Topmost = true
+        };
+
+        var text = new TextBlock
+        {
+            Text = "Press a hotkey (Esc to cancel)",
+            Foreground = Brushes.White,
+            FontSize = 12,
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+
+        dialog.Content = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0x2A, 0x2A, 0x2A)),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12),
+            Child = text
+        };
+
+        bool captured = false;
+
+        ModifierKeys? capturedMods = null;
+        Key? capturedKey = null;
+
+        dialog.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape)
+            {
+                dialog.DialogResult = false;
+                dialog.Close();
+                return;
+            }
+
+            var actualKey = e.Key == Key.System ? e.SystemKey : e.Key;
+            if (IsModifierKey(actualKey))
+                return;
+
+            var currentMods = Keyboard.Modifiers;
+            if (currentMods == ModifierKeys.None)
+            {
+                ShowNotification("Hotkey must include Ctrl/Alt/Shift/Win");
+                return;
+            }
+
+            capturedMods = currentMods;
+            capturedKey = actualKey;
+            captured = true;
+            dialog.DialogResult = true;
+            dialog.Close();
+        };
+
+        StopFocusTimer();
+        try
+        {
+            dialog.ShowDialog();
+        }
+        finally
+        {
+            _openedAt = DateTime.Now;
+            StartFocusTimer();
+        }
+
+        if (captured && capturedMods.HasValue && capturedKey.HasValue)
+        {
+            mods = capturedMods.Value;
+            key = capturedKey.Value;
+        }
+
+        return captured;
+    }
+
+    private static string GetScriptDisplayName(ScriptMeta script)
+    {
+        if (!string.IsNullOrWhiteSpace(script.Name))
+            return script.Name;
+        if (!string.IsNullOrWhiteSpace(script.FileName))
+            return script.FileName;
+        return Path.GetFileName(script.Path);
+    }
+
+    private static string FormatHotkey(ModifierKeys mods, Key key)
+    {
+        var parts = new List<string>();
+        if (mods.HasFlag(ModifierKeys.Control)) parts.Add("Ctrl");
+        if (mods.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
+        if (mods.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
+        if (mods.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
+        parts.Add(key.ToString());
+        return string.Join("+", parts);
+    }
+
+    public static void CleanupHotkeysOnExit()
+    {
+        foreach (var hotkey in _scriptHotkeys.Values)
+            hotkey.Unregister();
+
+        _scriptHotkeys.Clear();
+        _scriptHotkeyDefs.Clear();
+        _hotkeyOwners.Clear();
+
+        try
+        {
+            string scriptsDir = ResolveScriptsDir();
+            if (!Directory.Exists(scriptsDir)) return;
+
+            foreach (var file in Directory.EnumerateFiles(
+                         scriptsDir, "_*.hotkey.txt", SearchOption.AllDirectories))
+            {
+                try { File.Delete(file); }
+                catch { }
+            }
+        }
+        catch { }
+    }
+
+    private static bool IsModifierKey(Key key)
+    {
+        return key == Key.LeftShift || key == Key.RightShift ||
+               key == Key.LeftCtrl || key == Key.RightCtrl ||
+               key == Key.LeftAlt || key == Key.RightAlt ||
+               key == Key.LWin || key == Key.RWin;
+    }
+
+    private void AppendScreenshotContextMenu(ContextMenu menu, ScriptMeta script)
+    {
         var systemItem = new MenuItem
         {
             Header = "Screenshot Tool: System (Default)",
@@ -322,8 +611,6 @@ public partial class LauncherWindow : Window
 
         menu.Items.Add(systemItem);
         menu.Items.Add(customItem);
-
-        return menu;
     }
 
     private string PickScreenshotToolPath()
@@ -413,4 +700,5 @@ public partial class LauncherWindow : Window
         public string Path { get; set; } = "";
     }
 }
+
 

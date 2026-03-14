@@ -1,10 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
-using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -88,9 +85,6 @@ public class JsonRunner : IScriptRunner
                     case "simulateinput":
                     case "typeinput":
                         SimulateInput(step);
-                        break;
-                    case "screenshot":
-                        Screenshot(step, context, scriptPath);
                         break;
                     case "exec":
                         ExecExternal(step, context, state);
@@ -311,167 +305,6 @@ public class JsonRunner : IScriptRunner
         }
         catch { }
     }
-
-    private static void Screenshot(JsonElement step, ScriptContext context, string scriptPath)
-    {
-        string saveTo = GetString(step, "saveTo", "clipboard").Trim().ToLowerInvariant();
-        string tool = GetString(step, "tool", "default").Trim().ToLowerInvariant();
-        string path = GetString(step, "path", "");
-        int delayMs = GetInt(step, "delayMs", 0);
-        int timeoutMs = GetInt(step, "timeoutMs", 8000);
-
-        ResolveScreenshotTool(scriptPath, out var cfgTool, out var cfgPath);
-
-        string finalTool = tool == "system" || tool == "custom" ? tool : cfgTool;
-        string finalPath = !string.IsNullOrWhiteSpace(path) ? path : cfgPath;
-
-        if (delayMs > 0)
-            Thread.Sleep(delayMs);
-
-        bool toolExplicit = tool == "custom" || tool == "system";
-
-        if (finalTool == "custom")
-        {
-            if (string.IsNullOrWhiteSpace(finalPath) || !File.Exists(finalPath))
-            {
-                if (toolExplicit && tool == "custom")
-                    return;
-
-                // fallback to system silently
-                finalTool = "system";
-            }
-        }
-
-        if (finalTool == "custom")
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = finalPath,
-                    UseShellExecute = true
-                });
-            }
-            catch (Exception ex)
-            {
-                Logging.Write($"Screenshot tool launch failed: {ex}");
-                return;
-            }
-        }
-        else
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo("ms-screenclip:") { UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                Logging.Write($"Screenshot launch failed: {ex}");
-                return;
-            }
-        }
-
-        Image? img = WaitClipboardImage(timeoutMs);
-        if (img == null)
-        {
-            context.NotifyMessage = "Screenshot canceled or timed out.";
-            return;
-        }
-
-        try
-        {
-            if (saveTo == "file")
-            {
-                string outPath = path;
-                if (string.IsNullOrWhiteSpace(outPath))
-                {
-                    string tempDir = Path.Combine(Path.GetTempPath(), "Simpler");
-                    Directory.CreateDirectory(tempDir);
-                    outPath = Path.Combine(tempDir, "screenshot_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".png");
-                }
-                else
-                {
-                    string dir = Path.GetDirectoryName(outPath) ?? "";
-                    if (!string.IsNullOrWhiteSpace(dir))
-                        Directory.CreateDirectory(dir);
-                    if (string.IsNullOrWhiteSpace(Path.GetExtension(outPath)))
-                        outPath += ".png";
-                }
-
-                using var bmp = new Bitmap(img);
-                bmp.Save(outPath, ImageFormat.Png);
-                context.OutputText = outPath;
-            }
-        }
-        finally
-        {
-            img.Dispose();
-        }
-    }
-
-    private static Image? WaitClipboardImage(int timeoutMs)
-    {
-        var sw = Stopwatch.StartNew();
-        while (timeoutMs <= 0 || sw.ElapsedMilliseconds < timeoutMs)
-        {
-            Image? img = null;
-            try
-            {
-                img = StaRunner.Run(() => Clipboard.ContainsImage() ? Clipboard.GetImage() : null);
-            }
-            catch { }
-
-            if (img != null)
-                return img;
-
-            Thread.Sleep(100);
-        }
-
-        return null;
-    }
-
-    private static void ResolveScreenshotTool(string scriptPath, out string tool, out string customPath)
-    {
-        tool = "system";
-        customPath = "";
-
-        try
-        {
-            string settingsPath = GetScreenshotSettingsPath(scriptPath);
-            if (!File.Exists(settingsPath)) return;
-
-            string text = (File.ReadAllText(settingsPath) ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(text)) return;
-
-            if (text.StartsWith("custom|", StringComparison.OrdinalIgnoreCase))
-            {
-                tool = "custom";
-                customPath = text.Substring("custom|".Length).Trim();
-                return;
-            }
-
-            if (text.Equals("custom", StringComparison.OrdinalIgnoreCase))
-            {
-                tool = "custom";
-                return;
-            }
-
-            if (text.Equals("system", StringComparison.OrdinalIgnoreCase) ||
-                text.Equals("default", StringComparison.OrdinalIgnoreCase))
-            {
-                tool = "system";
-                return;
-            }
-        }
-        catch { }
-    }
-
-    private static string GetScreenshotSettingsPath(string scriptPath)
-    {
-        string dir = Path.GetDirectoryName(scriptPath) ?? "";
-        return Path.Combine(dir, "_screenshot_tool.txt");
-    }
-
     private static string ToSendKeys(string hotkey)
     {
         if (string.IsNullOrWhiteSpace(hotkey)) return "";
