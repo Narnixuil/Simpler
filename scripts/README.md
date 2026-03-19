@@ -1,4 +1,4 @@
-# Scripts Library
+﻿# Scripts Library
 
 This folder is the scripts library for Simpler.
 
@@ -18,7 +18,7 @@ This folder is the scripts library for Simpler.
 - Prefix by Folder: Prefix selected files with their parent folder name
 - Screenshot Blur: Screenshot with blurred background highlight
 - Screenshot Highlight: Screenshot with dimmed background highlight
-- Screenshot OCR (WeChat): OCR from clipboard image using WeChat OCR
+- Screenshot OCR (WeChat): OCR from selected screen region using WeChat OCR
 - Search Everything: Search selected text or filename in Everything
 - Title Case: Convert selected text to title case
 - Unlock and Delete: Force close locking processes and delete selected files or folders
@@ -30,6 +30,8 @@ Download the scripts you want from the library, then place them next to `Simpler
 
 Scripts library:
 - https://github.com/Narnixuil/Simpler/tree/main/scripts
+
+
 
 
 

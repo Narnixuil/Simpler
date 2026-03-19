@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -87,7 +87,7 @@ public class JsonRunner : IScriptRunner
                         SimulateInput(step);
                         break;
                     case "exec":
-                        ExecExternal(step, context, state);
+                        ExecExternal(step, context);
                         break;
                     case "js":
                     case "python":
@@ -165,7 +165,7 @@ public class JsonRunner : IScriptRunner
         return list;
     }
 
-    private static void ExecExternal(JsonElement step, ScriptContext context, ExecState state)
+    private static void ExecExternal(JsonElement step, ScriptContext context)
     {
         string file = GetString(step, "file");
         if (string.IsNullOrWhiteSpace(file))
@@ -203,7 +203,7 @@ public class JsonRunner : IScriptRunner
         {
             if (!Regex.IsMatch(code, @"function\s+run\s*\(|exports\.run\s*="))
                 code = "function run(context){\n" + code + "\n}";
-            string path = Path.Combine(tempDir, "inline.js");
+            string path = Path.Combine(tempDir, $"inline_{Guid.NewGuid():N}.js");
             File.WriteAllText(path, code);
             var runner = new JsRunner();
             await runner.RunAsync(path, context);
@@ -212,7 +212,7 @@ public class JsonRunner : IScriptRunner
         {
             if (!Regex.IsMatch(code, @"^\s*def\s+run\s*\(", RegexOptions.Multiline))
                 code = "def run(ctx):\n    " + code.Replace("\n", "\n    ");
-            string path = Path.Combine(tempDir, "inline.py");
+            string path = Path.Combine(tempDir, $"inline_{Guid.NewGuid():N}.py");
             File.WriteAllText(path, code);
             var runner = new PythonRunner();
             await runner.RunAsync(path, context);
@@ -225,7 +225,7 @@ public class JsonRunner : IScriptRunner
                        "async Task Run(ScriptContext context)\n{\n" +
                        code + "\n}";
             }
-            string path = Path.Combine(tempDir, "inline.csx");
+            string path = Path.Combine(tempDir, $"inline_{Guid.NewGuid():N}.csx");
             File.WriteAllText(path, code);
             var runner = new CSharpRunner();
             await runner.RunAsync(path, context);
@@ -431,6 +431,7 @@ public class JsonRunner : IScriptRunner
         }
     }
 }
+
 
 
 

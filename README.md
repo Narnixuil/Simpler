@@ -1,4 +1,4 @@
-# Simpler
+﻿# Simpler
 
 A lightweight Windows tray app that runs small text and file scripts from a searchable launcher.
 Built on Windows.
@@ -36,7 +36,7 @@ The release zip includes **only `scripts/README.md`**. Download the scripts you 
 - Prefix by Folder: Prefix selected files with their parent folder name
 - Screenshot Blur: Screenshot with blurred background highlight
 - Screenshot Highlight: Screenshot with dimmed background highlight
-- Screenshot OCR (WeChat): OCR from clipboard image using WeChat OCR
+- Screenshot OCR (WeChat): OCR from selected screen region using WeChat OCR
 - Search Everything: Search selected text or filename in Everything
 - Title Case: Convert selected text to title case
 - Unlock and Delete: Force close locking processes and delete selected files or folders
@@ -72,6 +72,8 @@ function Run {
 ## Logging
 Runtime logs are written to:
 `bin/Debug/net8.0-windows/logs/simpler.log`
+
+
 
 
 
