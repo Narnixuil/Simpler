@@ -2,6 +2,7 @@
   "name": "Folder Preview",
   "icon": "🗂️",
   "description": "Preview folder tree in a dialog",
+  "captureMode": "passive",
   "steps": [
     {
       "op": "csharp",

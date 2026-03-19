@@ -2,6 +2,7 @@
   "name": "Move to New Folder",
   "icon": "📁",
   "description": "Move selected files/folders into a newly created folder",
+  "captureMode": "passive",
   "steps": [
     {
       "op": "csharp",

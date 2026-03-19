@@ -2,6 +2,7 @@
   "name": "Unlock and Delete",
   "icon": "🗑️",
   "description": "Force close locking processes and delete selected files or folders",
+  "captureMode": "passive",
   "steps": [
     {
       "op": "csharp",

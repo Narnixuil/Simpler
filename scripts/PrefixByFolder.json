@@ -2,6 +2,7 @@
   "name": "Prefix by Folder",
   "icon": "🏷️",
   "description": "Prefix selected files with their parent folder name",
+  "captureMode": "passive",
   "steps": [
     {
       "op": "csharp",

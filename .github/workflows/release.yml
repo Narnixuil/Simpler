@@ -13,10 +13,10 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "8.0.x"
 
@@ -27,10 +27,10 @@ jobs:
       - name: Prepare release folder
         shell: pwsh
         run: |
-          $stage = "release";
+          $stage = "release"
           if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
           New-Item -ItemType Directory -Path $stage | Out-Null
-          $publish = "Simpler.Host/bin/Release/net8.0-windows/win-x64/publish";
+          $publish = "Simpler.Host/bin/Release/net8.0-windows/win-x64/publish"
           Copy-Item -Force "$publish/Simpler.Host.exe" "$stage/Simpler.exe"
           Copy-Item -Force "$publish/Simpler.Core.dll" "$stage/Simpler.Core.dll"
           Copy-Item -Force "README.md" "$stage/README.md"
@@ -38,15 +38,21 @@ jobs:
           if (Test-Path "scripts/README.md") { Copy-Item -Force "scripts/README.md" "$stage/scripts/README.md" }
           Compress-Archive -Path "$stage/*" -DestinationPath "Simpler-windows.zip" -Force
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            Simpler-windows.zip
+      - name: Create or update GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $title = $tag
 
-
-
+          gh release view $tag --repo "${{ github.repository }}" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag "Simpler-windows.zip" --clobber --repo "${{ github.repository }}"
+          }
+          else {
+            gh release create $tag "Simpler-windows.zip" --title $title --generate-notes --repo "${{ github.repository }}"
+          }
 
 
