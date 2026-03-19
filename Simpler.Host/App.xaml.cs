@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.IO;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -91,7 +92,8 @@ public partial class App : Application
             ScriptContext context;
             try
             {
-                context = await ContextCapture.GrabAsync();
+                var captureMode = ResolveCaptureMode(scriptPath);
+                context = await ContextCapture.GrabAsync(captureMode);
             }
             catch (Exception ex)
             {
@@ -122,6 +124,31 @@ public partial class App : Application
         });
     }
 
+
+    private static ContextCapture.CaptureMode ResolveCaptureMode(string scriptPath)
+    {
+        try
+        {
+            string global = Environment.GetEnvironmentVariable("SIMPLER_CAPTURE_MODE") ?? "";
+            if (global.Equals("passive", StringComparison.OrdinalIgnoreCase))
+                return ContextCapture.CaptureMode.Passive;
+
+            if (Path.GetExtension(scriptPath).Equals(".json", StringComparison.OrdinalIgnoreCase) && File.Exists(scriptPath))
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(scriptPath));
+                if (doc.RootElement.TryGetProperty("captureMode", out var cm) &&
+                    cm.ValueKind == JsonValueKind.String)
+                {
+                    string value = (cm.GetString() ?? "").Trim();
+                    if (value.Equals("passive", StringComparison.OrdinalIgnoreCase))
+                        return ContextCapture.CaptureMode.Passive;
+                }
+            }
+        }
+        catch { }
+
+        return ContextCapture.CaptureMode.ActiveCopy;
+    }
     public static void ShowNotification(string message)
     {
         Application.Current.Dispatcher.InvokeAsync(() =>
@@ -194,3 +221,4 @@ public partial class App : Application
         base.OnExit(e);
     }
 }
+

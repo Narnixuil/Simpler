@@ -26,12 +26,8 @@ public partial class LauncherWindow : Window
     private IntPtr _hwnd;
     private DateTime _openedAt;
 
-    private static readonly Dictionary<string, GlobalHotkey> _scriptHotkeys =
-        new(StringComparer.OrdinalIgnoreCase);
-    private static readonly Dictionary<string, (ModifierKeys Mods, Key Key)> _scriptHotkeyDefs =
-        new(StringComparer.OrdinalIgnoreCase);
-    private static readonly Dictionary<string, string> _hotkeyOwners =
-        new(StringComparer.OrdinalIgnoreCase);
+    private static ScriptHotkeyService? _sharedHotkeyService;
+    private readonly ScriptHotkeyService _hotkeyService;
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
@@ -40,6 +36,8 @@ public partial class LauncherWindow : Window
     {
         InitializeComponent();
         _scriptsDir = ResolveScriptsDir();
+        _sharedHotkeyService ??= new ScriptHotkeyService(_scriptsDir, ShowNotification);
+        _hotkeyService = _sharedHotkeyService;
         Loaded += (_, _) => OnLoaded();
         Closed += (_, _) => StopFocusTimer();
     }
@@ -263,15 +261,15 @@ public partial class LauncherWindow : Window
 
         menu.Opened += (_, _) =>
         {
-            hotkeyItem.IsChecked = EnsureHotkeyActive(script);
+            hotkeyItem.IsChecked = _hotkeyService.EnsureHotkeyActive(script);
         };
 
         hotkeyItem.Click += (_, _) =>
         {
             if (!hotkeyItem.IsChecked)
             {
-                UnregisterScriptHotkey(script);
-                DeleteHotkeyFile(script);
+                _hotkeyService.UnregisterScriptHotkey(script);
+                _hotkeyService.DeleteHotkeyFile(script);
                 return;
             }
 
@@ -281,7 +279,7 @@ public partial class LauncherWindow : Window
                 return;
             }
 
-            if (!TryRegisterScriptHotkey(script, mods, key, out var error))
+            if (!_hotkeyService.TryRegisterScriptHotkey(script, mods, key, out var error))
             {
                 hotkeyItem.IsChecked = false;
                 if (!string.IsNullOrWhiteSpace(error))
@@ -289,135 +287,13 @@ public partial class LauncherWindow : Window
                 return;
             }
 
-            SaveHotkeyFile(script, mods, key);
-            var displayName = GetScriptDisplayName(script);
-            App.ShowToast($"Set hotkey for {displayName}: {FormatHotkey(mods, key)}", 3);
+            _hotkeyService.SaveHotkeyFile(script, mods, key);
+            var displayName = ScriptHotkeyService.GetScriptDisplayName(script);
+            App.ShowToast($"Set hotkey for {displayName}: {ScriptHotkeyService.FormatHotkey(mods, key)}", 3);
         };
 
         return menu;
     }
-
-    private bool EnsureHotkeyActive(ScriptMeta script)
-    {
-        if (_scriptHotkeyDefs.ContainsKey(script.Path))
-            return true;
-
-        if (!TryLoadHotkeyFile(script, out var mods, out var key))
-            return false;
-
-        if (TryRegisterScriptHotkey(script, mods, key, out _))
-            return true;
-
-        DeleteHotkeyFile(script);
-        return false;
-    }
-
-    private bool TryRegisterScriptHotkey(ScriptMeta script, ModifierKeys mods, Key key, out string? error)
-    {
-        error = null;
-        string signature = BuildHotkeySignature(mods, key);
-
-        if (_hotkeyOwners.TryGetValue(signature, out var owner) &&
-            !owner.Equals(script.Path, StringComparison.OrdinalIgnoreCase))
-        {
-            error = "Hotkey is already in use";
-            return false;
-        }
-
-        UnregisterScriptHotkey(script);
-
-        var hotkey = new GlobalHotkey(mods, key,
-            () => App.RunScriptByPath(script.Path));
-
-        if (!hotkey.Register())
-        {
-            error = "Failed to register hotkey (possibly in use)";
-            return false;
-        }
-
-        _scriptHotkeys[script.Path] = hotkey;
-        _scriptHotkeyDefs[script.Path] = (mods, key);
-        _hotkeyOwners[signature] = script.Path;
-        return true;
-    }
-
-    private void UnregisterScriptHotkey(ScriptMeta script)
-    {
-        if (_scriptHotkeyDefs.TryGetValue(script.Path, out var def))
-        {
-            var signature = BuildHotkeySignature(def.Mods, def.Key);
-            _hotkeyOwners.Remove(signature);
-            _scriptHotkeyDefs.Remove(script.Path);
-        }
-
-        if (_scriptHotkeys.TryGetValue(script.Path, out var hotkey))
-        {
-            hotkey.Unregister();
-            _scriptHotkeys.Remove(script.Path);
-        }
-    }
-
-    private static string BuildHotkeySignature(ModifierKeys mods, Key key)
-        => $"{(int)mods}:{key}";
-
-    private bool TryLoadHotkeyFile(ScriptMeta script, out ModifierKeys mods, out Key key)
-    {
-        mods = ModifierKeys.None;
-        key = Key.None;
-
-        try
-        {
-            string path = GetHotkeySettingsPath(script);
-            if (!File.Exists(path)) return false;
-
-            string text = (File.ReadAllText(path) ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(text)) return false;
-
-            var parts = text.Split('|');
-            if (parts.Length != 2) return false;
-            if (!int.TryParse(parts[0], out var modsValue)) return false;
-            if (!Enum.TryParse(parts[1], out Key parsedKey)) return false;
-
-            mods = (ModifierKeys)modsValue;
-            key = parsedKey;
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private void SaveHotkeyFile(ScriptMeta script, ModifierKeys mods, Key key)
-    {
-        try
-        {
-            string path = GetHotkeySettingsPath(script);
-            File.WriteAllText(path, $"{(int)mods}|{key}");
-        }
-        catch (Exception ex)
-        {
-            ShowNotification("Failed to save hotkey: " + ex.Message);
-        }
-    }
-
-    private void DeleteHotkeyFile(ScriptMeta script)
-    {
-        try
-        {
-            string path = GetHotkeySettingsPath(script);
-            if (File.Exists(path)) File.Delete(path);
-        }
-        catch { }
-    }
-
-    private string GetHotkeySettingsPath(ScriptMeta script)
-    {
-        string dir = Path.GetDirectoryName(script.Path) ?? _scriptsDir;
-        string name = Path.GetFileNameWithoutExtension(script.Path);
-        return Path.Combine(dir, $"_{name}.hotkey.txt");
-    }
-
     private bool TryCaptureHotkey(out ModifierKeys mods, out Key key)
     {
         mods = ModifierKeys.None;
@@ -527,26 +403,12 @@ public partial class LauncherWindow : Window
 
     public static void CleanupHotkeysOnExit()
     {
-        foreach (var hotkey in _scriptHotkeys.Values)
-            hotkey.Unregister();
-
-        _scriptHotkeys.Clear();
-        _scriptHotkeyDefs.Clear();
-        _hotkeyOwners.Clear();
-
-        try
+        if (_sharedHotkeyService == null)
         {
-            string scriptsDir = ResolveScriptsDir();
-            if (!Directory.Exists(scriptsDir)) return;
-
-            foreach (var file in Directory.EnumerateFiles(
-                         scriptsDir, "_*.hotkey.txt", SearchOption.AllDirectories))
-            {
-                try { File.Delete(file); }
-                catch { }
-            }
+            _sharedHotkeyService = new ScriptHotkeyService(ResolveScriptsDir(), _ => { });
         }
-        catch { }
+
+        _sharedHotkeyService.CleanupHotkeysOnExit();
     }
 
     private static bool IsModifierKey(Key key)
@@ -557,6 +419,8 @@ public partial class LauncherWindow : Window
                key == Key.LWin || key == Key.RWin;
     }
 }
+
+
 
 
 

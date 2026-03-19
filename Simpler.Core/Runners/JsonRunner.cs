@@ -17,6 +17,26 @@ public class JsonRunner : IScriptRunner
 {
     public IReadOnlyList<string> SupportedExtensions => new[] { ".json" };
 
+    private static readonly HashSet<string> InlineOps = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "js", "python", "csharp"
+    };
+
+    private static readonly Dictionary<string, Action<JsonElement, ScriptContext, ExecState>> SyncStepHandlers =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["getselectedtext"] = (_, context, state) => state.Text = context.SelectedText ?? "",
+            ["getselectedfiles"] = (_, context, state) => state.Files = new List<string>(context.SelectedFiles),
+            ["setoutputtext"] = (step, context, state) => context.OutputText = GetString(step, "value", state.Text),
+            ["setclipboard"] = (step, _, state) => SetClipboard(GetString(step, "value", state.Text)),
+            ["paste"] = (_, _, _) => Paste(),
+            ["simulatekey"] = (step, _, _) => SimulateKeys(step),
+            ["sendkeys"] = (step, _, _) => SimulateKeys(step),
+            ["simulateinput"] = (step, _, _) => SimulateInput(step),
+            ["typeinput"] = (step, _, _) => SimulateInput(step),
+            ["exec"] = (step, context, _) => ExecExternal(step, context)
+        };
+
     private class ExecState
     {
         public string Text { get; set; } = "";
@@ -61,40 +81,7 @@ public class JsonRunner : IScriptRunner
                 if (!step.TryGetProperty("op", out var opEl)) continue;
                 string op = (opEl.GetString() ?? "").Trim().ToLowerInvariant();
 
-                switch (op)
-                {
-                    case "getselectedtext":
-                        state.Text = context.SelectedText ?? "";
-                        break;
-                    case "getselectedfiles":
-                        state.Files = new List<string>(context.SelectedFiles);
-                        break;
-                    case "setoutputtext":
-                        context.OutputText = GetString(step, "value", state.Text);
-                        break;
-                    case "setclipboard":
-                        SetClipboard(GetString(step, "value", state.Text));
-                        break;
-                    case "paste":
-                        Paste();
-                        break;
-                    case "simulatekey":
-                    case "sendkeys":
-                        SimulateKeys(step);
-                        break;
-                    case "simulateinput":
-                    case "typeinput":
-                        SimulateInput(step);
-                        break;
-                    case "exec":
-                        ExecExternal(step, context);
-                        break;
-                    case "js":
-                    case "python":
-                    case "csharp":
-                        await RunInlineCodeAsync(op, step, context);
-                        break;
-                }
+                await ExecuteStepAsync(scriptPath, op, step, context, state);
             }
         }
         catch (Exception ex)
@@ -102,6 +89,39 @@ public class JsonRunner : IScriptRunner
             context.NotifyMessage = $"JSON error: {ex.Message}";
             Logging.Write($"JSON error: {scriptPath}\n{ex}");
         }
+    }
+    private static async Task ExecuteStepAsync(string scriptPath, string op, JsonElement step, ScriptContext context, ExecState state)
+    {
+        bool stepLog = IsStepLogEnabled();
+        var sw = stepLog ? Stopwatch.StartNew() : null;
+
+        try
+        {
+            if (SyncStepHandlers.TryGetValue(op, out var handler))
+            {
+                handler(step, context, state);
+                return;
+            }
+
+            if (InlineOps.Contains(op))
+                await RunInlineCodeAsync(op, step, context);
+        }
+        finally
+        {
+            if (stepLog && sw != null)
+            {
+                sw.Stop();
+                Logging.Write($"JSON step: {Path.GetFileName(scriptPath)} op={op} took {sw.ElapsedMilliseconds}ms");
+            }
+        }
+    }
+
+    private static bool IsStepLogEnabled()
+    {
+        string value = Environment.GetEnvironmentVariable("SIMPLER_STEP_LOG") ?? "";
+        return value.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+               value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+               value.Equals("on", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string GetString(JsonElement step, string name, string? fallback = "")
@@ -431,6 +451,10 @@ public class JsonRunner : IScriptRunner
         }
     }
 }
+
+
+
+
 
 
 

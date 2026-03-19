@@ -2,6 +2,7 @@
   "name": "Pin Window",
   "icon": "📌",
   "description": "Toggle topmost for the active window",
+  "captureMode": "passive",
   "steps": [
     {
       "codeLines": [

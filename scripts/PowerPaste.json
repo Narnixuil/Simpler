@@ -2,6 +2,7 @@
   "name": "Power Paste",
   "icon": "⚡",
   "description": "Queue clipboard text and paste sequentially",
+  "captureMode": "passive",
   "steps": [
     {
       "codeLines": [

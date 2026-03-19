@@ -4,6 +4,7 @@
   "description": "Normalize copied text (remove extra spaces/lines)",
   "steps": [
     {
+      "op": "csharp",
       "codeLines": [
         "using System;",
         "using System.Collections.Generic;",
@@ -13,12 +14,15 @@
         "",
         "async System.Threading.Tasks.Task Run(ScriptContext context)",
         "{",
-        "    string text = \"\";",
-        "    try",
+        "    string text = context.SelectedText ?? \"\";",
+        "    if (string.IsNullOrWhiteSpace(text))",
         "    {",
-        "        text = Simpler.Core.Context.StaRunner.Run(() => System.Windows.Forms.Clipboard.ContainsText() ? System.Windows.Forms.Clipboard.GetText() : \"\");",
+        "        try",
+        "        {",
+        "            text = Simpler.Core.Context.StaRunner.Run(() => System.Windows.Forms.Clipboard.ContainsText() ? System.Windows.Forms.Clipboard.GetText() : \"\");",
+        "        }",
+        "        catch { }",
         "    }",
-        "    catch { }",
         "    if (string.IsNullOrWhiteSpace(text)) { context.Notify(\"Clipboard is empty.\"); return; }",
         "",
         "    var norm = text.Replace(\"\\r\\n\", \"\\n\").Replace(\"\\r\", \"\\n\");",
@@ -178,9 +182,9 @@
         "    var result = sb.ToString().Trim();",
         "    if (result.Length == 0) return;",
         "    context.SetOutputText(result);",
-        "}"
-      ],
-      "op": "csharp"
+        "}",
+        ""
+      ]
     }
   ]
 }

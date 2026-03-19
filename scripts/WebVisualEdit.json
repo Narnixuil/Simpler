@@ -2,6 +2,7 @@
   "name": "Web Visual Edit",
   "icon": "💫",
   "description": "Enable in-page visual editing by typing a javascript: URL into the address bar",
+  "captureMode": "passive",
   "steps": [
     {
       "op": "csharp",
