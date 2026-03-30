@@ -1,4 +1,4 @@
-﻿# Simpler
+# Simpler
 
 A lightweight Windows tray app that runs small text and file scripts from a searchable launcher.
 Built on Windows.
@@ -16,12 +16,14 @@ dotnet run --project "D:\Programs\Simpler\Simpler.Host\Simpler.Host.csproj"
 - Press `Ctrl + \`` to open/close the launcher.
 - Click a script card to run it.
 - Click outside the launcher to close it.
+- Right-click a card and choose `Edit` to open the script JSON file.
+- Click the `+` button to create a new script from `scripts/Template.json`.
 
 ## Scripts
 Scripts live in `scripts/` at the solution root (or next to the exe in a release zip).
 They are not bundled into the exe, so you can add/remove/modify scripts freely.
 
-The release zip includes **only `scripts/README.md`**. Download the scripts you want from the library:
+The release zip includes `scripts/README.md` and `scripts/Template.json`.
 - https://github.com/Narnixuil/Simpler/tree/main/scripts
 
 ### Available Scripts
@@ -69,12 +71,6 @@ function Run {
 ```
 
 ## Logging
-Runtime logs are written to:
-`bin/Debug/net8.0-windows/logs/simpler.log`
-
-
-
-
-
-
-
+- Logs are written only in Debug/development runs (`dotnet run`).
+- Path: `bin/Debug/net8.0-windows/logs/simpler.log`
+- Release builds (`Simpler.exe`) do not write runtime logs by default.

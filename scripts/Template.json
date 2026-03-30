@@ -1,0 +1,17 @@
+{
+  "name": "Template",
+  "icon": "icon",
+  "description": "Starter template for quick script creation",
+  "steps": [
+    {
+      "op": "csharp",
+      "codeLines": [
+        "async System.Threading.Tasks.Task Run(ScriptContext context)",
+        "{",
+        "    // TODO: write your script logic here.",
+        "    context.Notify(\"Script created. Start coding.\");",
+        "}"
+      ]
+    }
+  ]
+}

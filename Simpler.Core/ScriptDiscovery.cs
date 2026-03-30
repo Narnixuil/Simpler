@@ -28,6 +28,7 @@ public static class ScriptDiscovery
 
             // Skip hidden, meta, and unsupported files.
             if (fileName.StartsWith("_")) continue;
+            if (fileName.Equals("Template.json", StringComparison.OrdinalIgnoreCase)) continue;
             if (fileName.EndsWith(".meta.json")) continue;
             if (!registry.AllSupportedExtensions.Contains(ext)) continue;
 
@@ -96,3 +97,4 @@ public static class ScriptDiscovery
         catch { }
     }
 }
+

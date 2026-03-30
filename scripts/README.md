@@ -1,4 +1,4 @@
-﻿# Scripts Library
+# Scripts Library
 
 This folder is the scripts library for Simpler.
 
@@ -24,8 +24,7 @@ This folder is the scripts library for Simpler.
 - Upper Case: Convert selected text to upper case
 - Web Visual Edit: Enable in-page visual editing by typing a javascript: URL into the address bar
 ## Release Zip Note
-The release zip includes **only this README** inside `scripts/`.
-Download the scripts you want from the library, then place them next to `Simpler.exe` in the `scripts/` folder.
+The release zip includes `README.md` and `Template.json` inside `scripts/`.
 
 Scripts library:
 - https://github.com/Narnixuil/Simpler/tree/main/scripts

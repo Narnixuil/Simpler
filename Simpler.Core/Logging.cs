@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text;
 
@@ -10,6 +10,9 @@ public static class Logging
 
     public static void Write(string message)
     {
+#if !DEBUG
+        return;
+#else
         try
         {
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
@@ -27,5 +30,6 @@ public static class Logging
         {
             // Swallow logging errors to avoid breaking runtime flow.
         }
+#endif
     }
 }

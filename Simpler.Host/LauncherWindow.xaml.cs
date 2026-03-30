@@ -1,9 +1,12 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -110,12 +113,23 @@ public partial class LauncherWindow : Window
         _focusTimer = null;
     }
 
-    private void RefreshScripts()
+        private void RefreshScripts()
     {
         _scripts = ScriptDiscovery.Discover(_scriptsDir, _registry);
-        RenderCards(_scripts);
+        RenderCards(GetFilteredScripts(SearchBox.Text));
         StatusLabel.Content =
             $"{_scripts.Count} scripts in {_scriptsDir}";
+    }
+
+    private IEnumerable<ScriptMeta> GetFilteredScripts(string query)
+    {
+        var q = (query ?? string.Empty).ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(q))
+            return _scripts;
+
+        return _scripts.Where(s =>
+            s.Name.ToLowerInvariant().Contains(q) ||
+            s.Description.ToLowerInvariant().Contains(q));
     }
 
     private void RenderCards(IEnumerable<ScriptMeta> scripts)
@@ -187,13 +201,12 @@ public partial class LauncherWindow : Window
 
             if (!string.IsNullOrWhiteSpace(script.Description))
                 border.ToolTip = script.Description;
-
-            border.ContextMenu = BuildCardContextMenu(script);
         }
+
+        border.ContextMenu = BuildCardContextMenu(script);
 
         return border;
     }
-
     private void OnCardClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is not Border border) return;
@@ -226,16 +239,82 @@ public partial class LauncherWindow : Window
             ShowNotification("Open scripts failed: " + ex.Message);
         }
     }
+    private void QuickCreateScriptButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryShowCreateScriptDialog(
+                out var scriptName,
+                out var icon,
+                out var description))
+            return;
+
+        try
+        {
+            Directory.CreateDirectory(_scriptsDir);
+            var safeName = MakeSafeFileName(scriptName);
+            if (string.IsNullOrWhiteSpace(safeName))
+            {
+                ShowNotification("Script name is invalid.");
+                return;
+            }
+
+            var targetPath = Path.Combine(_scriptsDir, $"{safeName}.json");
+            if (File.Exists(targetPath))
+            {
+                ShowNotification("A script with this name already exists.");
+                return;
+            }
+
+            var templatePath = Path.Combine(_scriptsDir, "Template.json");
+            var templateText = File.Exists(templatePath)
+                ? File.ReadAllText(templatePath)
+                : """
+                  {
+                    "name": "Template",
+                    "icon": "icon",
+                    "description": "Script description",
+                    "steps": [
+                      {
+                        "op": "csharp",
+                        "codeLines": []
+                      }
+                    ]
+                  }
+                  """;
+
+            var root = JsonNode.Parse(templateText)?.AsObject();
+            if (root is null)
+            {
+                ShowNotification("Template.json is invalid.");
+                return;
+            }
+
+            root["name"] = scriptName;
+            root["icon"] = icon;
+            root["description"] = description;
+
+            var json = root.ToJsonString(new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+            File.WriteAllText(targetPath, json + Environment.NewLine, new UTF8Encoding(false));
+
+            Close();
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = targetPath,
+                UseShellExecute = true
+            });
+            App.ShowToast($"Created script: {scriptName}", 2);
+        }
+        catch (Exception ex)
+        {
+            ShowNotification("Create script failed: " + ex.Message);
+        }
+    }
     private void SearchBox_TextChanged(object sender,
         TextChangedEventArgs e)
     {
-        string q = SearchBox.Text.ToLower();
-        var filtered = string.IsNullOrWhiteSpace(q)
-            ? _scripts
-            : _scripts.Where(s =>
-                s.Name.ToLower().Contains(q) ||
-                s.Description.ToLower().Contains(q));
-        RenderCards(filtered);
+        RenderCards(GetFilteredScripts(SearchBox.Text));
     }
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
@@ -250,6 +329,15 @@ public partial class LauncherWindow : Window
             StaysOpen = false
         };
 
+
+        var editItem = new MenuItem
+        {
+            Header = "Edit"
+        };
+        editItem.Click += (_, _) => OpenScriptFile(script);
+        menu.Items.Add(editItem);
+
+        menu.Items.Add(new Separator());
         var hotkeyItem = new MenuItem
         {
             Header = "Set Hotkey",
@@ -293,6 +381,28 @@ public partial class LauncherWindow : Window
         };
 
         return menu;
+    }
+
+    private void OpenScriptFile(ScriptMeta script)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(script.Path) || !File.Exists(script.Path))
+            {
+                ShowNotification("Script file not found.");
+                return;
+            }
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = script.Path,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowNotification("Open script file failed: " + ex.Message);
+        }
     }
     private bool TryCaptureHotkey(out ModifierKeys mods, out Key key)
     {
@@ -380,7 +490,197 @@ public partial class LauncherWindow : Window
 
         return captured;
     }
+    private bool TryShowCreateScriptDialog(
+        out string scriptName,
+        out string icon,
+        out string description)
+    {
+        scriptName = string.Empty;
+        icon = string.Empty;
+        description = string.Empty;
 
+        var selectedName = string.Empty;
+        var selectedIcon = string.Empty;
+        var selectedDescription = string.Empty;
+
+        var dialog = new Window
+        {
+            Title = "Quick Create Script",
+            Width = 420,
+            Height = 240,
+            WindowStyle = WindowStyle.ToolWindow,
+            ResizeMode = ResizeMode.NoResize,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            Topmost = true,
+            Background = new SolidColorBrush(Color.FromRgb(0x2A, 0x2A, 0x2A))
+        };
+
+        var panel = new Grid
+        {
+            Margin = new Thickness(14)
+        };
+        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
+        panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var labelBrush = Brushes.White;
+        var boxBackground = new SolidColorBrush(Color.FromRgb(0x1F, 0x1F, 0x1F));
+        var boxBorder = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55));
+
+        var nameLabel = new TextBlock
+        {
+            Text = "Script Name",
+            Foreground = labelBrush,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetRow(nameLabel, 0);
+        Grid.SetColumn(nameLabel, 0);
+
+        var nameBox = new TextBox
+        {
+            Margin = new Thickness(0, 0, 0, 8),
+            Padding = new Thickness(6, 4, 6, 4),
+            Background = boxBackground,
+            BorderBrush = boxBorder,
+            Foreground = Brushes.White
+        };
+        Grid.SetRow(nameBox, 0);
+        Grid.SetColumn(nameBox, 1);
+
+        var iconLabel = new TextBlock
+        {
+            Text = "Icon",
+            Foreground = labelBrush,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetRow(iconLabel, 1);
+        Grid.SetColumn(iconLabel, 0);
+
+        var iconBox = new TextBox
+        {
+            Margin = new Thickness(0, 0, 0, 8),
+            Padding = new Thickness(6, 4, 6, 4),
+            Background = boxBackground,
+            BorderBrush = boxBorder,
+            Foreground = Brushes.White,
+            Text = "icon"
+        };
+        Grid.SetRow(iconBox, 1);
+        Grid.SetColumn(iconBox, 1);
+
+        var descLabel = new TextBlock
+        {
+            Text = "Description",
+            Foreground = labelBrush,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetRow(descLabel, 2);
+        Grid.SetColumn(descLabel, 0);
+
+        var descBox = new TextBox
+        {
+            Margin = new Thickness(0, 0, 0, 8),
+            Padding = new Thickness(6, 4, 6, 4),
+            Background = boxBackground,
+            BorderBrush = boxBorder,
+            Foreground = Brushes.White
+        };
+        Grid.SetRow(descBox, 2);
+        Grid.SetColumn(descBox, 1);
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        Grid.SetRow(buttons, 4);
+        Grid.SetColumnSpan(buttons, 2);
+
+        var cancelButton = new Button
+        {
+            Content = "Cancel",
+            MinWidth = 100,
+            Height = 32,
+            Margin = new Thickness(0, 0, 8, 0)
+        };
+        cancelButton.Click += (_, _) =>
+        {
+            dialog.DialogResult = false;
+            dialog.Close();
+        };
+
+        var startButton = new Button
+        {
+            Content = "Start Writing Script",
+            MinWidth = 160,
+            Height = 32
+        };
+        startButton.Click += (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(nameBox.Text))
+            {
+                ShowNotification("Script name is required.");
+                nameBox.Focus();
+                return;
+            }
+
+            selectedName = nameBox.Text.Trim();
+            selectedIcon = string.IsNullOrWhiteSpace(iconBox.Text) ? "icon" : iconBox.Text.Trim();
+            selectedDescription = string.IsNullOrWhiteSpace(descBox.Text)
+                ? "TODO: describe this script"
+                : descBox.Text.Trim();
+            dialog.DialogResult = true;
+            dialog.Close();
+        };
+
+        buttons.Children.Add(cancelButton);
+        buttons.Children.Add(startButton);
+
+        panel.Children.Add(nameLabel);
+        panel.Children.Add(nameBox);
+        panel.Children.Add(iconLabel);
+        panel.Children.Add(iconBox);
+        panel.Children.Add(descLabel);
+        panel.Children.Add(descBox);
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+
+        StopFocusTimer();
+        try
+        {
+            nameBox.Focus();
+            var result = dialog.ShowDialog();
+            if (result == true)
+            {
+                scriptName = selectedName;
+                icon = selectedIcon;
+                description = selectedDescription;
+                return true;
+            }
+
+            return false;
+        }
+        finally
+        {
+            _openedAt = DateTime.Now;
+            StartFocusTimer();
+        }
+    }
+
+    private static string MakeSafeFileName(string scriptName)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var cleaned = new string(scriptName
+            .Trim()
+            .Select(ch => invalid.Contains(ch) ? '_' : ch)
+            .ToArray());
+        return cleaned.Trim();
+    }
     private static string GetScriptDisplayName(ScriptMeta script)
     {
         if (!string.IsNullOrWhiteSpace(script.Name))
@@ -419,9 +719,4 @@ public partial class LauncherWindow : Window
                key == Key.LWin || key == Key.RWin;
     }
 }
-
-
-
-
-
 

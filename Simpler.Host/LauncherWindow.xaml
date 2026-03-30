@@ -20,6 +20,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBox x:Name="SearchBox"
                 Grid.Column="0"
@@ -34,9 +35,16 @@
             <Button x:Name="OpenScriptsButton"
                 Grid.Column="1"
                 Height="36"
+                Margin="0,0,6,0"
                 Padding="0" Width="36"
-                Content="📂" ToolTip="Open Scripts"
+                Content="&#x1F4C2;" ToolTip="Open Scripts"
                 Click="OpenScriptsButton_Click"/>
+            <Button x:Name="QuickCreateScriptButton"
+                Grid.Column="2"
+                Height="36"
+                Padding="0" Width="36"
+                Content="&#x2795;" ToolTip="Create a new script from template"
+                Click="QuickCreateScriptButton_Click"/>
         </Grid>
         <!-- Status bar -->
         <Label x:Name="StatusLabel"
