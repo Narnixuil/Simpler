@@ -14,10 +14,13 @@ dotnet run --project "D:\Programs\Simpler\Simpler.Host\Simpler.Host.csproj"
 
 ## Usage
 - Press `Ctrl + \`` to open/close the launcher.
+- Type in the search box to filter scripts by name or description.
 - Click a script card to run it.
 - Click outside the launcher to close it.
+- Click the `Open Scripts` button to open the scripts folder.
+- Click the `Plus (+)` button to create a new script from `scripts/Template.json`.
+- Right-click a card and choose `Set Hotkey` to assign or clear a global hotkey.
 - Right-click a card and choose `Edit` to open the script JSON file.
-- Click the `+` button to create a new script from `scripts/Template.json`.
 
 ## Scripts
 Scripts live in `scripts/` at the solution root (or next to the exe in a release zip).
