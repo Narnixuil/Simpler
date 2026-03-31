@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "Power Paste",
   "icon": "⚡",
   "description": "Queue clipboard text and paste sequentially",
@@ -69,7 +69,7 @@
         "        if (m.Msg == WM_HOTKEY)",
         "        {",
         "            if (m.WParam == (IntPtr)1) { HandlePaste(); return; }",
-        "            if (m.WParam == (IntPtr)2) { ShowToast(\"已退出\"); Close(); return; }",
+        "            if (m.WParam == (IntPtr)2) { ShowToast(\"Exited\"); Close(); return; }",
         "        }",
         "        base.WndProc(ref m);",
         "    }",
@@ -89,14 +89,14 @@
         "        _lastText = text;",
         "        _queue.Enqueue(text);",
         "        UpdateStatus();",
-        "        ShowToast($\"{_queue.Count}条文本已入列\");",
+        "        ShowToast($\"{_queue.Count} item(s) queued\");",
         "    }",
         "",
         "    void HandlePaste()",
         "    {",
         "        if (_queue.Count == 0)",
         "        {",
-        "            ShowToast(\"队列已空，结束\");",
+        "            ShowToast(\"Queue is empty. Ending session.\");",
         "            Close();",
         "            return;",
         "        }",
@@ -113,7 +113,7 @@
         "        UpdateStatus();",
         "        if (_queue.Count == 0)",
         "        {",
-        "            ShowToast(\"已全部粘贴\");",
+        "            ShowToast(\"All items pasted.\");",
         "            Close();",
         "        }",
         "    }",
@@ -211,3 +211,4 @@
     }
   ]
 }
+
