@@ -3,12 +3,10 @@ using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
-using System.Windows.Threading;
 using Simpler.Core;
 using Simpler.Core.Context;
 using Simpler.Core.Models;
+using Simpler.Core.Ui;
 
 namespace Simpler.Host;
 
@@ -64,7 +62,8 @@ public partial class App : Application
             System.Windows.Input.ModifierKeys.Control,
             System.Windows.Input.Key.OemTilde,
             ShowLauncher);
-        _hotkey.Register();
+        if (!_hotkey.Register())
+            ShowNotification($"Failed to register launcher hotkey (Ctrl+~), Win32 error: {_hotkey.LastError}");
     }
 
     public static void ShowLauncher()
@@ -108,7 +107,15 @@ public partial class App : Application
                 return;
             }
 
-            await runner.RunAsync(scriptPath, context);
+            try
+            {
+                await runner.RunAsync(scriptPath, context);
+            }
+            catch (Exception ex)
+            {
+                context.NotifyMessage ??= $"Runner error: {ex.Message}";
+                Logging.Write($"Runner error: {scriptPath}\n{ex}");
+            }
 
             try
             {
@@ -151,9 +158,7 @@ public partial class App : Application
     }
     public static void ShowNotification(string message)
     {
-        Application.Current.Dispatcher.InvokeAsync(() =>
-            MessageBox.Show(message, "Simpler",
-                MessageBoxButton.OK, MessageBoxImage.Information));
+        ShowToast(message, 3);
     }
 
     private static void ShowStartupToast()
@@ -163,54 +168,7 @@ public partial class App : Application
 
     public static void ShowToast(string message, int seconds = 3)
     {
-        Application.Current.Dispatcher.InvokeAsync(() =>
-        {
-            var toast = new Window
-            {
-                Width = 320,
-                Height = 44,
-                WindowStyle = WindowStyle.None,
-                AllowsTransparency = true,
-                Background = Brushes.Transparent,
-                Topmost = true,
-                ShowInTaskbar = false,
-                ResizeMode = ResizeMode.NoResize
-            };
-
-            var border = new Border
-            {
-                Background = new SolidColorBrush(Color.FromArgb(220, 30, 30, 30)),
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(12, 8, 12, 8)
-            };
-
-            var text = new TextBlock
-            {
-                Text = message,
-                Foreground = Brushes.White,
-                FontSize = 12,
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                TextWrapping = TextWrapping.Wrap
-            };
-
-            border.Child = text;
-            toast.Content = border;
-
-            var work = SystemParameters.WorkArea;
-            toast.Left = work.Right - toast.Width - 16;
-            toast.Top = work.Bottom - toast.Height - 16;
-
-            toast.Show();
-
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
-            timer.Tick += (_, _) =>
-            {
-                timer.Stop();
-                toast.Close();
-            };
-            timer.Start();
-        });
+        ToastUi.ShowToast(message, Math.Max(1, seconds) * 1000);
     }
 
     protected override void OnExit(ExitEventArgs e)

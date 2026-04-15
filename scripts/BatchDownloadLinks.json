@@ -4,6 +4,7 @@
   "description": "Download files from URLs in selected text",
   "steps": [
     {
+      "op": "csharp",
       "codeLines": [
         "using System;",
         "using System.IO;",
@@ -101,8 +102,7 @@
         "    }",
         "    return path;",
         "}"
-      ],
-      "op": "csharp"
+      ]
     }
   ]
 }

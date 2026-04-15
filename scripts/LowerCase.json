@@ -4,14 +4,14 @@
   "description": "Convert selected text to lower case",
   "steps": [
     {
+      "op": "csharp",
       "codeLines": [
         "if (string.IsNullOrEmpty(context.SelectedText)) {",
         "    context.Notify(\"No selected text detected\");",
         "    return;",
         "}",
         "context.SetOutputText(context.SelectedText.ToLower());"
-      ],
-      "op": "csharp"
+      ]
     }
   ]
 }

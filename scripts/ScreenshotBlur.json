@@ -1,6 +1,6 @@
-{
+﻿{
   "name": "Screenshot Blur",
-  "icon": "◌",
+  "icon": "☁️",
   "description": "Screenshot with blurred background highlight",
   "captureMode": "passive",
   "steps": [
@@ -22,7 +22,7 @@
         "    Bitmap? bmpA = BlurCaptureScreenshot();",
         "    if (bmpA == null)",
         "    {",
-        "        Simpler.Core.Ui.ScreenshotUi.ShowToast(\"Cancelled\");",
+        "        Simpler.Core.Ui.ToastUi.ShowToast(\"Cancelled\");",
         "        return;",
         "    }",
         "",
@@ -30,7 +30,7 @@
         "    if (regionB == null || regionB.Value.Width < 2 || regionB.Value.Height < 2)",
         "    {",
         "        bmpA.Dispose();",
-        "        Simpler.Core.Ui.ScreenshotUi.ShowToast(\"Cancelled\");",
+        "        Simpler.Core.Ui.ToastUi.ShowToast(\"Cancelled\");",
         "        return;",
         "    }",
         "",
@@ -48,7 +48,7 @@
         "    });",
         "",
         "    ",
-        "Simpler.Core.Ui.ScreenshotUi.ShowToast",
+        "Simpler.Core.Ui.ToastUi.ShowToast",
         "(\"Screenshot copied to clipboard.\");",
         "}",
         "Bitmap? BlurCaptureScreenshot()",
@@ -179,3 +179,4 @@
     }
   ]
 }
+

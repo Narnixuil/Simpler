@@ -23,49 +23,75 @@ public static class ScriptDiscovery
         foreach (var filePath in
             Directory.GetFiles(scriptsDir).OrderBy(f => f))
         {
-            string fileName = Path.GetFileName(filePath);
-            string ext = Path.GetExtension(filePath).ToLowerInvariant();
-
-            // Skip hidden, meta, and unsupported files.
-            if (fileName.StartsWith("_")) continue;
-            if (fileName.Equals("Template.json", StringComparison.OrdinalIgnoreCase)) continue;
-            if (fileName.EndsWith(".meta.json")) continue;
-            if (!registry.AllSupportedExtensions.Contains(ext)) continue;
-
-            var meta = new ScriptMeta
-            {
-                Path     = filePath,
-                FileName = fileName,
-                Lang     = LangNames.GetValueOrDefault(ext, ext.TrimStart('.')),
-                Icon     = DefaultIcons.GetValueOrDefault(ext, "🔧"),
-                Name     = Path.GetFileNameWithoutExtension(fileName),
-            };
-
-            if (ext == ".json")
-            {
-                TryLoadJsonMeta(filePath, meta);
-            }
-
-            // Check entry point.
-            var runner = registry.GetRunner(ext);
-            if (runner != null)
-            {
-                try   { meta.HasRun = runner.HasEntryPoint(filePath); }
-                catch { meta.HasRun = false; }
-            }
-
-            if (!meta.HasRun)
-                meta.DisabledReason =
-                    $"No run() entry point found in {fileName}";
-
-            results.Add(meta);
+            if (TryDiscoverFile(filePath, registry, out var meta))
+                results.Add(meta);
         }
 
         return results;
     }
 
-    private static void TryLoadJsonMeta(string path, ScriptMeta meta)
+    public static bool TryDiscoverFile(string filePath, RunnerRegistry registry, out ScriptMeta meta)
     {
+        meta = new ScriptMeta();
+
+        string fileName = Path.GetFileName(filePath);
+        string ext = Path.GetExtension(filePath).ToLowerInvariant();
+
+        if (ShouldSkip(fileName, ext, registry))
+            return false;
+
+        meta = new ScriptMeta
+        {
+            Path = filePath,
+            FileName = fileName,
+            Lang = LangNames.GetValueOrDefault(ext, ext.TrimStart('.')),
+            Icon = DefaultIcons.GetValueOrDefault(ext, "🔧"),
+            Name = Path.GetFileNameWithoutExtension(fileName),
+        };
+
+        if (ext == ".json")
+        {
+            if (TryLoadJsonMeta(filePath, meta, out var hasRunFromJson, out var parseError))
+            {
+                meta.HasRun = hasRunFromJson;
+            }
+            else
+            {
+                meta.HasRun = false;
+                meta.DisabledReason = string.IsNullOrWhiteSpace(parseError)
+                    ? "Invalid JSON script."
+                    : $"Invalid JSON script: {parseError}";
+            }
+        }
+        else
+        {
+            var runner = registry.GetRunner(ext);
+            if (runner != null)
+            {
+                try { meta.HasRun = runner.HasEntryPoint(filePath); }
+                catch { meta.HasRun = false; }
+            }
+        }
+
+        if (!meta.HasRun && string.IsNullOrWhiteSpace(meta.DisabledReason))
+            meta.DisabledReason = $"No run() entry point found in {fileName}";
+
+        return true;
+    }
+
+    private static bool ShouldSkip(string fileName, string ext, RunnerRegistry registry)
+    {
+        if (fileName.StartsWith("_")) return true;
+        if (fileName.Equals("Template.json", StringComparison.OrdinalIgnoreCase)) return true;
+        if (fileName.EndsWith(".meta.json")) return true;
+        if (!registry.AllSupportedExtensions.Contains(ext)) return true;
+        return false;
+    }
+
+    private static bool TryLoadJsonMeta(string path, ScriptMeta meta, out bool hasRun, out string? parseError)
+    {
+        hasRun = false;
+        parseError = null;
         try
         {
             string text = File.ReadAllText(path);
@@ -93,8 +119,16 @@ public static class ScriptDiscovery
                 else
                     meta.Icon = icon;
             }
+
+            hasRun = root.TryGetProperty("steps", out var steps) &&
+                     steps.ValueKind == System.Text.Json.JsonValueKind.Array;
+            return true;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            parseError = ex.Message;
+            return false;
+        }
     }
 }
 

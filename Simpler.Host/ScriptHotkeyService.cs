@@ -113,19 +113,6 @@ public class ScriptHotkeyService
         ScriptHotkeys.Clear();
         ScriptHotkeyDefs.Clear();
         HotkeyOwners.Clear();
-
-        try
-        {
-            if (!Directory.Exists(_scriptsDir)) return;
-
-            foreach (var file in Directory.EnumerateFiles(
-                         _scriptsDir, "_*.hotkey.txt", SearchOption.AllDirectories))
-            {
-                try { File.Delete(file); }
-                catch { }
-            }
-        }
-        catch { }
     }
 
     public static string GetScriptDisplayName(ScriptMeta script)

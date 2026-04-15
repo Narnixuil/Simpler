@@ -3,64 +3,173 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
-using Hardcodet.Wpf.TaskbarNotification;
+using Forms = System.Windows.Forms;
 
 namespace Simpler.Host;
 
 // -- Tray --
 public class TrayManager : IDisposable
 {
-    private TaskbarIcon? _tray;
+    private Forms.NotifyIcon? _tray;
     private Icon? _icon;
-    private System.Windows.Controls.ContextMenu? _menu;
+    private Forms.ContextMenuStrip? _menu;
 
     public void Initialize()
     {
         _icon = CreateIcon();
-        _tray = new TaskbarIcon
+        _menu = new Forms.ContextMenuStrip
         {
-            ToolTipText = "Simpler",
-            Icon = _icon
+            ShowImageMargin = true,
+            ShowCheckMargin = true,
+            Font = new System.Drawing.Font("Segoe UI", 10f, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point),
+            BackColor = Color.FromArgb(42, 42, 42),
+            ForeColor = Color.FromArgb(235, 235, 235),
+            Padding = new Forms.Padding(4)
         };
-        _tray.TrayMouseDoubleClick += (_, _) => App.ShowLauncher();
+        _menu.Renderer = new SimplerMenuRenderer();
 
-        _menu = new System.Windows.Controls.ContextMenu
-        {
-            StaysOpen = false
-        };
-
-        var showItem = new System.Windows.Controls.MenuItem
-            { Header = "Show Panel" };
+        var showItem = new Forms.ToolStripMenuItem("Show Panel");
+        showItem.ForeColor = _menu.ForeColor;
+        showItem.Padding = new Forms.Padding(12, 8, 12, 8);
         showItem.Click += (_, _) => App.ShowLauncher();
 
-        var startupItem = new System.Windows.Controls.MenuItem
-            { Header = "Launch at Startup", IsCheckable = true };
-        startupItem.IsChecked = StartupManager.IsEnabled();
+        var startupItem = new Forms.ToolStripMenuItem("Launch at Startup")
+        {
+            CheckOnClick = true,
+            Checked = StartupManager.IsEnabled()
+        };
+        startupItem.ForeColor = _menu.ForeColor;
+        startupItem.Padding = new Forms.Padding(12, 8, 12, 8);
         startupItem.Click += (_, _) =>
         {
-            StartupManager.SetEnabled(startupItem.IsChecked);
+            StartupManager.SetEnabled(startupItem.Checked);
         };
 
-        var quitItem = new System.Windows.Controls.MenuItem
-            { Header = "Quit" };
+        var quitItem = new Forms.ToolStripMenuItem("Quit");
+        quitItem.ForeColor = _menu.ForeColor;
+        quitItem.Padding = new Forms.Padding(12, 8, 12, 8);
         quitItem.Click += (_, _) =>
         {
-            _tray?.Dispose();
-            Application.Current.Shutdown();
+            if (Application.Current != null)
+                Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown());
+        };
+
+        var separator = new Forms.ToolStripSeparator
+        {
+            Margin = new Forms.Padding(10, 4, 10, 4)
         };
 
         _menu.Items.Add(showItem);
         _menu.Items.Add(startupItem);
-        _menu.Items.Add(new System.Windows.Controls.Separator());
+        _menu.Items.Add(separator);
         _menu.Items.Add(quitItem);
-        _menu.Placement = PlacementMode.AbsolutePoint;
+        _menu.Opening += (_, _) => startupItem.Checked = StartupManager.IsEnabled();
 
-        // Keep a ContextMenu assigned so WPF handles focus/close properly.
-        _tray.ContextMenu = _menu;
-        _tray.TrayRightMouseUp += (_, _) => ShowMenuAtCursor();
+        _tray = new Forms.NotifyIcon
+        {
+            Text = "Simpler",
+            Icon = _icon,
+            ContextMenuStrip = _menu,
+            Visible = true
+        };
+        _tray.MouseDoubleClick += (_, _) => App.ShowLauncher();
+    }
+
+    public void Dispose()
+    {
+        if (_tray != null)
+        {
+            _tray.Visible = false;
+            _tray.Dispose();
+            _tray = null;
+        }
+        _menu?.Dispose();
+        _menu = null;
+        _icon?.Dispose();
+        _icon = null;
+    }
+
+    private sealed class SimplerMenuColorTable : Forms.ProfessionalColorTable
+    {
+        private static readonly Color Bg = Color.FromArgb(42, 42, 42);
+        private static readonly Color Hover = Color.FromArgb(58, 58, 58);
+        private static readonly Color Border = Color.FromArgb(82, 82, 82);
+        private static readonly Color Separator = Color.FromArgb(66, 66, 66);
+
+        public override Color ToolStripDropDownBackground => Bg;
+        public override Color MenuBorder => Border;
+        public override Color MenuItemBorder => Bg;
+        public override Color MenuItemSelected => Hover;
+        public override Color MenuItemSelectedGradientBegin => Hover;
+        public override Color MenuItemSelectedGradientEnd => Hover;
+        public override Color MenuItemPressedGradientBegin => Hover;
+        public override Color MenuItemPressedGradientMiddle => Hover;
+        public override Color MenuItemPressedGradientEnd => Hover;
+        public override Color SeparatorDark => Separator;
+        public override Color SeparatorLight => Separator;
+        public override Color CheckBackground => Hover;
+        public override Color CheckSelectedBackground => Hover;
+        public override Color CheckPressedBackground => Hover;
+        public override Color ImageMarginGradientBegin => Bg;
+        public override Color ImageMarginGradientMiddle => Bg;
+        public override Color ImageMarginGradientEnd => Bg;
+    }
+
+    private sealed class SimplerMenuRenderer : Forms.ToolStripProfessionalRenderer
+    {
+        private static readonly Color Bg = Color.FromArgb(42, 42, 42);
+        private static readonly Color Hover = Color.FromArgb(58, 58, 58);
+        private static readonly Color Separator = Color.FromArgb(66, 66, 66);
+        private static readonly Color CheckColor = Color.FromArgb(214, 221, 228);
+
+        public SimplerMenuRenderer() : base(new SimplerMenuColorTable())
+        {
+            RoundedEdges = false;
+        }
+
+        protected override void OnRenderMenuItemBackground(Forms.ToolStripItemRenderEventArgs e)
+        {
+            var rect = new Rectangle(System.Drawing.Point.Empty, e.Item.Size);
+            using var brush = new SolidBrush(e.Item.Selected ? Hover : Bg);
+            e.Graphics.FillRectangle(brush, rect);
+        }
+
+        protected override void OnRenderSeparator(Forms.ToolStripSeparatorRenderEventArgs e)
+        {
+            int x1 = 14;
+            int x2 = e.Item.Width - 14;
+            int y = e.Item.ContentRectangle.Top + (e.Item.ContentRectangle.Height / 2);
+            using var pen = new Pen(Separator);
+            e.Graphics.DrawLine(pen, x1, y, x2, y);
+        }
+
+        protected override void OnRenderItemCheck(Forms.ToolStripItemImageRenderEventArgs e)
+        {
+            if (e.Item is not Forms.ToolStripMenuItem menuItem || !menuItem.Checked)
+            {
+                base.OnRenderItemCheck(e);
+                return;
+            }
+
+            var r = e.ImageRectangle;
+            int cx = r.Left + (r.Width / 2);
+            int cy = r.Top + (r.Height / 2);
+
+            using var pen = new Pen(CheckColor, 2.8f)
+            {
+                StartCap = LineCap.Round,
+                EndCap = LineCap.Round
+            };
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            e.Graphics.DrawLines(pen, new[]
+            {
+                new System.Drawing.Point(cx - 6, cy),
+                new System.Drawing.Point(cx - 1, cy + 5),
+                new System.Drawing.Point(cx + 7, cy - 5)
+            });
+        }
     }
 
     private static Icon CreateIcon()
@@ -84,38 +193,6 @@ public class TrayManager : IDisposable
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(IntPtr hIcon);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct POINT
-    {
-        public int X;
-        public int Y;
-    }
-
-    [DllImport("user32.dll")]
-    private static extern bool GetCursorPos(out POINT lpPoint);
-
-    [DllImport("user32.dll")]
-    private static extern uint GetDpiForSystem();
-
-    private void ShowMenuAtCursor()
-    {
-        if (_menu == null) return;
-        if (!GetCursorPos(out var pt)) return;
-
-        _menu.IsOpen = false;
-        _menu.Placement = PlacementMode.AbsolutePoint;
-        double scale = 96.0 / GetDpiForSystem();
-        _menu.HorizontalOffset = pt.X * scale;
-        _menu.VerticalOffset = pt.Y * scale;
-        _menu.IsOpen = true;
-    }
-
-    public void Dispose()
-    {
-        _tray?.Dispose();
-        _icon?.Dispose();
-    }
 }
 
 // -- Global Hotkey (Win32) --

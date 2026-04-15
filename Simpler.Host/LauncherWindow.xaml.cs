@@ -23,9 +23,13 @@ namespace Simpler.Host;
 public partial class LauncherWindow : Window
 {
     private List<ScriptMeta> _scripts = new();
+    private readonly Dictionary<string, (DateTime LastWriteUtc, ScriptMeta Meta)> _scriptCache =
+        new(StringComparer.OrdinalIgnoreCase);
     private readonly RunnerRegistry _registry = App.Registry;
     private readonly string _scriptsDir;
     private DispatcherTimer? _focusTimer;
+    private DispatcherTimer? _scriptsRefreshDebounceTimer;
+    private FileSystemWatcher? _scriptsWatcher;
     private IntPtr _hwnd;
     private DateTime _openedAt;
 
@@ -42,7 +46,11 @@ public partial class LauncherWindow : Window
         _sharedHotkeyService ??= new ScriptHotkeyService(_scriptsDir, ShowNotification);
         _hotkeyService = _sharedHotkeyService;
         Loaded += (_, _) => OnLoaded();
-        Closed += (_, _) => StopFocusTimer();
+        Closed += (_, _) =>
+        {
+            StopFocusTimer();
+            StopScriptsWatcher();
+        };
     }
 
     private static string ResolveScriptsDir()
@@ -83,6 +91,7 @@ public partial class LauncherWindow : Window
         _hwnd = new WindowInteropHelper(this).Handle;
         _openedAt = DateTime.Now;
         StartFocusTimer();
+        StartScriptsWatcher();
         RefreshScripts();
         SearchBox.Focus();
     }
@@ -113,12 +122,122 @@ public partial class LauncherWindow : Window
         _focusTimer = null;
     }
 
-        private void RefreshScripts()
+    private void RefreshScripts()
     {
-        _scripts = ScriptDiscovery.Discover(_scriptsDir, _registry);
+        var nextScripts = new List<ScriptMeta>();
+        var changedScriptPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var currentScriptPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (Directory.Exists(_scriptsDir))
+        {
+            foreach (var filePath in Directory.GetFiles(_scriptsDir).OrderBy(f => f))
+            {
+                DateTime lastWriteUtc;
+                try
+                {
+                    lastWriteUtc = File.GetLastWriteTimeUtc(filePath);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (_scriptCache.TryGetValue(filePath, out var cached) &&
+                    cached.LastWriteUtc == lastWriteUtc)
+                {
+                    nextScripts.Add(cached.Meta);
+                    currentScriptPaths.Add(filePath);
+                    continue;
+                }
+
+                if (!ScriptDiscovery.TryDiscoverFile(filePath, _registry, out var discovered))
+                {
+                    _scriptCache.Remove(filePath);
+                    continue;
+                }
+
+                _scriptCache[filePath] = (lastWriteUtc, discovered);
+                nextScripts.Add(discovered);
+                currentScriptPaths.Add(filePath);
+                changedScriptPaths.Add(filePath);
+            }
+        }
+
+        foreach (var cachedPath in _scriptCache.Keys.ToList())
+        {
+            if (!currentScriptPaths.Contains(cachedPath))
+                _scriptCache.Remove(cachedPath);
+        }
+
+        _scripts = nextScripts;
+        foreach (var script in _scripts)
+        {
+            if (!changedScriptPaths.Contains(script.Path))
+                continue;
+
+            _hotkeyService.EnsureHotkeyActive(script);
+        }
         RenderCards(GetFilteredScripts(SearchBox.Text));
         StatusLabel.Content =
             $"{_scripts.Count} scripts in {_scriptsDir}";
+    }
+
+    private void StartScriptsWatcher()
+    {
+        StopScriptsWatcher();
+
+        if (!Directory.Exists(_scriptsDir))
+            return;
+
+        _scriptsRefreshDebounceTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(180)
+        };
+        _scriptsRefreshDebounceTimer.Tick += (_, _) =>
+        {
+            _scriptsRefreshDebounceTimer?.Stop();
+            RefreshScripts();
+        };
+
+        _scriptsWatcher = new FileSystemWatcher(_scriptsDir, "*.json")
+        {
+            IncludeSubdirectories = false,
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.Size
+        };
+
+        _scriptsWatcher.Changed += (_, _) => QueueRefreshScripts();
+        _scriptsWatcher.Created += (_, _) => QueueRefreshScripts();
+        _scriptsWatcher.Deleted += (_, _) => QueueRefreshScripts();
+        _scriptsWatcher.Renamed += (_, _) => QueueRefreshScripts();
+        _scriptsWatcher.EnableRaisingEvents = true;
+    }
+
+    private void StopScriptsWatcher()
+    {
+        if (_scriptsWatcher != null)
+        {
+            _scriptsWatcher.EnableRaisingEvents = false;
+            _scriptsWatcher.Dispose();
+            _scriptsWatcher = null;
+        }
+
+        if (_scriptsRefreshDebounceTimer != null)
+        {
+            _scriptsRefreshDebounceTimer.Stop();
+            _scriptsRefreshDebounceTimer = null;
+        }
+    }
+
+    private void QueueRefreshScripts()
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (_scriptsRefreshDebounceTimer == null)
+                return;
+
+            _scriptsRefreshDebounceTimer.Stop();
+            _scriptsRefreshDebounceTimer.Start();
+        });
     }
 
     private IEnumerable<ScriptMeta> GetFilteredScripts(string query)
@@ -218,9 +337,7 @@ public partial class LauncherWindow : Window
 
     private static void ShowNotification(string message)
     {
-        Application.Current.Dispatcher.InvokeAsync(() =>
-            MessageBox.Show(message, "Simpler",
-                MessageBoxButton.OK, MessageBoxImage.Information));
+        App.ShowNotification(message);
     }
 
     private void OpenScriptsButton_Click(object sender, RoutedEventArgs e)
@@ -681,26 +798,6 @@ public partial class LauncherWindow : Window
             .ToArray());
         return cleaned.Trim();
     }
-    private static string GetScriptDisplayName(ScriptMeta script)
-    {
-        if (!string.IsNullOrWhiteSpace(script.Name))
-            return script.Name;
-        if (!string.IsNullOrWhiteSpace(script.FileName))
-            return script.FileName;
-        return Path.GetFileName(script.Path);
-    }
-
-    private static string FormatHotkey(ModifierKeys mods, Key key)
-    {
-        var parts = new List<string>();
-        if (mods.HasFlag(ModifierKeys.Control)) parts.Add("Ctrl");
-        if (mods.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
-        if (mods.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
-        if (mods.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
-        parts.Add(key.ToString());
-        return string.Join("+", parts);
-    }
-
     public static void CleanupHotkeysOnExit()
     {
         if (_sharedHotkeyService == null)

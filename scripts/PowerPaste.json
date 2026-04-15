@@ -5,6 +5,7 @@
   "captureMode": "passive",
   "steps": [
     {
+      "op": "csharp",
       "codeLines": [
         "using System;",
         "using System.Collections.Generic;",
@@ -38,6 +39,8 @@
         "",
         "    Form? _status;",
         "    Label? _statusLabel;",
+        "    string _lastToastMessage = \"\";",
+        "    DateTime _lastToastAt = DateTime.MinValue;",
         "",
         "    protected override void OnHandleCreated(EventArgs e)",
         "    {",
@@ -47,7 +50,6 @@
         "        RegisterHotKey(Handle, 2, MOD_NOREPEAT, VK_ESCAPE);",
         "        ShowStatus();",
         "        UpdateStatus();",
-        "        ShowToast(\"PowerPaste started (Esc to exit)\");",
         "    }",
         "",
         "    protected override void OnFormClosed(FormClosedEventArgs e)",
@@ -174,6 +176,11 @@
         "",
         "    void ShowToast(string message)",
         "    {",
+        "        if (message == _lastToastMessage && (DateTime.UtcNow - _lastToastAt).TotalMilliseconds < 1000)",
+        "            return;",
+        "        _lastToastMessage = message;",
+        "        _lastToastAt = DateTime.UtcNow;",
+        "",
         "        var toast = new Form",
         "        {",
         "            FormBorderStyle = FormBorderStyle.None,",
@@ -204,10 +211,17 @@
         "",
         "async System.Threading.Tasks.Task Run(ScriptContext context)",
         "{",
-        "    StaRunner.Run(() => Application.Run(new PowerPasteSession()));",
+        "    try",
+        "    {",
+        "        StaRunner.Run(() => Application.Run(new PowerPasteSession()));",
+        "    }",
+        "    catch (Exception ex)",
+        "    {",
+        "        Simpler.Core.Logging.Write($\"PowerPaste failed to start: {ex}\");",
+        "        try { Simpler.Core.Ui.ToastUi.ShowToast(\"PowerPaste failed to start\", 3000); } catch { }",
+        "    }",
         "}"
-      ],
-      "op": "csharp"
+      ]
     }
   ]
 }

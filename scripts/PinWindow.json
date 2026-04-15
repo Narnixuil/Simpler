@@ -5,6 +5,7 @@
   "captureMode": "passive",
   "steps": [
     {
+      "op": "csharp",
       "codeLines": [
         "using System;",
         "using System.Runtime.InteropServices;",
@@ -130,8 +131,7 @@
         "        System.Windows.Forms.Application.Run(toast);",
         "    });",
         "}"
-      ],
-      "op": "csharp"
+      ]
     }
   ]
 }
